@@ -27,12 +27,18 @@ export function Canvas({ width, height }: CanvasProps) {
     selectedShape,
     selectedShapeId,
     setSelectedShapeId,
+    deleteShape,
+    updateShape,
   } = useCanvasStore();
   const [drawStart, setDrawStart] = useState<{ x: number; y: number } | null>(
     null
   );
   const [currentShape, setCurrentShape] = useState<Shape | null>(null);
   const [isSelecting, setIsSelecting] = useState<boolean>(false);
+  const [isMoving, setIsMoving] = useState<boolean>(false);
+  const [moveStart, setMoveStart] = useState<{ x: number; y: number } | null>(
+    null
+  );
 
   // Initialize WebGL context
   useEffect(() => {
@@ -196,8 +202,17 @@ export function Canvas({ width, height }: CanvasProps) {
     // Try to find a shape under the cursor first for selection
     const shapeId = findShapeAtPosition(x, y);
 
+    // If we found a shape, select it and start moving
+    if (shapeId) {
+      console.log("Selecting shape for move:", shapeId);
+      setSelectedShapeId(shapeId);
+      setIsSelecting(true);
+      setIsDrawing(false);
+      setIsMoving(true);
+      setMoveStart({ x, y });
+    }
     // If in drawing mode and we have a selected shape type, start drawing
-    if (selectedShape && !shapeId) {
+    else if (selectedShape && !shapeId) {
       console.log("Starting drawing with shape type:", selectedShape.type);
       setDrawStart({ x, y });
       setIsDrawing(true);
@@ -224,81 +239,93 @@ export function Canvas({ width, height }: CanvasProps) {
       console.log("Created initial shape:", newShape);
       setCurrentShape(newShape);
     }
-    // If we found a shape, select it
-    else if (shapeId) {
-      console.log("Selecting shape:", shapeId);
-      setSelectedShapeId(shapeId);
-      setIsSelecting(true);
-      setIsDrawing(false);
-    }
     // If we didn't find a shape, deselect
     else {
       console.log("Deselecting shapes");
       setSelectedShapeId(null);
       setIsSelecting(false);
+      setIsMoving(false);
+      setSelectedShape(null);
     }
 
     console.log("=== End Mouse Down Event ===");
   };
 
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!isDrawing || !drawStart || !currentShape) {
-      return;
+    if (isDrawing && drawStart && currentShape) {
+      console.log("=== Mouse Move Event ===");
+
+      const canvas = canvasRef.current;
+      if (!canvas) {
+        console.log("Canvas ref is null");
+        return;
+      }
+
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+
+      console.log("Current mouse:", { x, y });
+      console.log("Draw start:", drawStart);
+
+      // Calculate new width and height
+      let newWidth = Math.abs(x - drawStart.x);
+      let newHeight = Math.abs(y - drawStart.y);
+      newWidth = Math.max(newWidth, 1); // Ensure minimum size
+      newHeight = Math.max(newHeight, 1); // Ensure minimum size
+
+      // Calculate new position (if dragging left or up)
+      const newX = x < drawStart.x ? x : drawStart.x;
+      const newY = y < drawStart.y ? y : drawStart.y;
+
+      // If shift key is pressed, maintain aspect ratio
+      if (e.shiftKey) {
+        const maxDimension = Math.max(newWidth, newHeight);
+        newWidth = maxDimension;
+        newHeight = maxDimension;
+      }
+
+      // Update current shape
+      const updatedShape = {
+        ...currentShape,
+        x: newX,
+        y: newY,
+        width: newWidth,
+        height: newHeight,
+      };
+
+      console.log(
+        "Updated shape:",
+        updatedShape.type,
+        updatedShape.id,
+        updatedShape.x,
+        updatedShape.y,
+        updatedShape.width,
+        updatedShape.height
+      );
+      setCurrentShape(updatedShape);
+
+      console.log("=== End Mouse Move Event ===");
+    } else if (isMoving && moveStart && selectedShapeId) {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+
+      const deltaX = x - moveStart.x;
+      const deltaY = y - moveStart.y;
+
+      const shape = shapes.find((s) => s.id === selectedShapeId);
+      if (shape) {
+        updateShape(selectedShapeId, {
+          x: shape.x + deltaX,
+          y: shape.y + deltaY,
+        });
+        setMoveStart({ x, y });
+      }
     }
-
-    console.log("=== Mouse Move Event ===");
-
-    const canvas = canvasRef.current;
-    if (!canvas) {
-      console.log("Canvas ref is null");
-      return;
-    }
-
-    const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-
-    console.log("Current mouse:", { x, y });
-    console.log("Draw start:", drawStart);
-
-    // Calculate new width and height
-    let newWidth = Math.abs(x - drawStart.x);
-    let newHeight = Math.abs(y - drawStart.y);
-    newWidth = Math.max(newWidth, 1); // Ensure minimum size
-    newHeight = Math.max(newHeight, 1); // Ensure minimum size
-
-    // Calculate new position (if dragging left or up)
-    const newX = x < drawStart.x ? x : drawStart.x;
-    const newY = y < drawStart.y ? y : drawStart.y;
-
-    // If shift key is pressed, maintain aspect ratio
-    if (e.shiftKey) {
-      const maxDimension = Math.max(newWidth, newHeight);
-      newWidth = maxDimension;
-      newHeight = maxDimension;
-    }
-
-    // Update current shape
-    const updatedShape = {
-      ...currentShape,
-      x: newX,
-      y: newY,
-      width: newWidth,
-      height: newHeight,
-    };
-
-    console.log(
-      "Updated shape:",
-      updatedShape.type,
-      updatedShape.id,
-      updatedShape.x,
-      updatedShape.y,
-      updatedShape.width,
-      updatedShape.height
-    );
-    setCurrentShape(updatedShape);
-
-    console.log("=== End Mouse Move Event ===");
   };
 
   const handleMouseUp = () => {
@@ -338,8 +365,23 @@ export function Canvas({ width, height }: CanvasProps) {
     setDrawStart(null);
     setIsDrawing(false);
     setIsSelecting(false);
+    setIsMoving(false);
+    setMoveStart(null);
     console.log("=== End Mouse Up Event ===");
   };
+
+  // Add keyboard event listener for delete key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Delete" && selectedShapeId) {
+        deleteShape(selectedShapeId);
+        setSelectedShapeId(null);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [selectedShapeId, deleteShape, setSelectedShapeId]);
 
   return (
     <div className="relative w-full h-full">

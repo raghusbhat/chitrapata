@@ -68,7 +68,7 @@ function createEllipseVertices(
   width: number,
   height: number
 ): Float32Array {
-  const segments = 32; // Number of segments in the ellipse
+  const segments = 128; // Increased number of segments for smoother circles
   const vertices = new Float32Array((segments + 2) * 4); // +2 for center and closing point
 
   const centerX = x + width / 2;
@@ -188,7 +188,7 @@ export function renderShape(
         shape.height
       );
       drawMode = gl.TRIANGLE_FAN;
-      vertexCount = 34; // 32 segments + center + closing point
+      vertexCount = 130; // 128 segments + center + closing point
       shapeTypeValue = 1; // Ellipse
       break;
     case "line":
@@ -249,9 +249,9 @@ export function renderShape(
     gl.uniform1f(uniforms.strokeWidth, 0.02); // Border thickness
     gl.uniform1f(uniforms.smoothing, 0.01); // Border smoothing
   } else if (shape.type === "ellipse") {
-    // For ellipses - softer edge
-    gl.uniform1f(uniforms.strokeWidth, 0.05); // Border thickness
-    gl.uniform1f(uniforms.smoothing, 0.02); // Edge smoothing
+    // For ellipses - improved anti-aliasing
+    gl.uniform1f(uniforms.strokeWidth, 0.0); // No border
+    gl.uniform1f(uniforms.smoothing, 0.005); // Reduced smoothing for crisper edges
   } else {
     // For lines
     gl.uniform1f(uniforms.strokeWidth, 0.0); // No border

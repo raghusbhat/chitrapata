@@ -62,22 +62,12 @@ const fragmentShaderSource = `#version 300 es
     else if (u_shapeType == 1) { // Ellipse
       // For ellipses, use distance from center
       vec2 center = vec2(0.5, 0.5);
-      float dist = distance(v_texCoord, center);
+      float dist = length(v_texCoord - center) * 2.0; // Multiply by 2 to normalize to unit circle
       
-      // Calculate distance from edge (0.5 is the normalized radius)
-      float edgeDistance = 0.5 - dist;
+      // Smooth the edge
+      float alpha = 1.0 - smoothstep(1.0 - u_smoothing, 1.0, dist);
       
-      // Apply edge smoothing for the outer edge
-      float alpha = smoothstep(-u_smoothing, 0.0, edgeDistance);
-      
-      // Determine if we're in the stroke region
-      float strokeEdge = u_strokeWidth;
-      float fillFactor = smoothstep(strokeEdge - u_smoothing, strokeEdge, edgeDistance);
-      
-      // Mix fill and stroke colors
-      outColor = mix(u_strokeColor, u_fillColor, fillFactor);
-      
-      // Apply alpha for edge smoothing
+      outColor = u_fillColor;
       outColor.a *= alpha;
     }
     else { // Line or other
