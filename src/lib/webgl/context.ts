@@ -8,12 +8,16 @@ const vertexShaderSource = `#version 300 es
   in vec2 a_texCoord;
   
   uniform vec2 u_resolution;
+  uniform mat4 u_modelViewMatrix;
   
   out vec2 v_texCoord;
   
   void main() {
+    // Apply model-view transformation
+    vec4 position = u_modelViewMatrix * vec4(a_position, 0, 1);
+    
     // Convert from pixels to clip space
-    vec2 clipSpace = (a_position / u_resolution) * 2.0 - 1.0;
+    vec2 clipSpace = (position.xy / u_resolution) * 2.0 - 1.0;
     
     // Flip Y coordinate
     clipSpace.y = -clipSpace.y;
@@ -40,37 +44,25 @@ const fragmentShaderSource = `#version 300 es
   out vec4 outColor;
   
   void main() {
-    // Different rendering based on shape type
     if (u_shapeType == 0) { // Rectangle
-      // For rectangles, calculate distance from edges
       float distFromEdgeX = min(v_texCoord.x, 1.0 - v_texCoord.x);
       float distFromEdgeY = min(v_texCoord.y, 1.0 - v_texCoord.y);
       float distFromEdge = min(distFromEdgeX, distFromEdgeY);
       
-      // Apply border with smooth transition
       if (distFromEdge < u_strokeWidth) {
-        // In the border region
-        float borderFactor = distFromEdge / u_strokeWidth;
-        // Smooth transition from stroke to fill
-        float smoothBorder = smoothstep(0.0, u_smoothing, borderFactor);
-        outColor = mix(u_strokeColor, u_fillColor, smoothBorder);
+        float borderAlpha = smoothstep(0.0, u_smoothing, distFromEdge / u_strokeWidth);
+        outColor = mix(u_strokeColor, u_fillColor, borderAlpha);
       } else {
-        // Inside the fill region
         outColor = u_fillColor;
       }
     } 
     else if (u_shapeType == 1) { // Ellipse
-      // For ellipses, use distance from center
       vec2 center = vec2(0.5, 0.5);
-      float dist = length(v_texCoord - center) * 2.0; // Multiply by 2 to normalize to unit circle
-      
-      // Smooth the edge
+      float dist = length(v_texCoord - center) * 2.0;
       float alpha = 1.0 - smoothstep(1.0 - u_smoothing, 1.0, dist);
-      
-      outColor = u_fillColor;
-      outColor.a *= alpha;
+      outColor = vec4(u_fillColor.rgb, u_fillColor.a * alpha);
     }
-    else { // Line or other
+    else { // Line
       outColor = u_strokeColor;
     }
   }
@@ -104,8 +96,9 @@ export function createWebGLContext(canvas: HTMLCanvasElement): WebGLContext {
   gl.useProgram(program);
 
   // Get uniform locations
-  const uniforms: Record<string, WebGLUniformLocation | null> = {
+  const uniforms = {
     resolution: gl.getUniformLocation(program, "u_resolution"),
+    modelViewMatrix: gl.getUniformLocation(program, "u_modelViewMatrix"),
     fillColor: gl.getUniformLocation(program, "u_fillColor"),
     strokeColor: gl.getUniformLocation(program, "u_strokeColor"),
     strokeWidth: gl.getUniformLocation(program, "u_strokeWidth"),
@@ -122,14 +115,12 @@ export function createWebGLContext(canvas: HTMLCanvasElement): WebGLContext {
     throw new Error(`Missing uniform locations: ${missingUniforms.join(", ")}`);
   }
 
-  // Cast all uniforms to non-null after checking
-  const safeUniforms = Object.fromEntries(
-    Object.entries(uniforms).map(([key, val]) => [key, val!])
-  ) as Record<string, WebGLUniformLocation>;
-
-  console.log("Uniform locations:", safeUniforms);
-
-  return { gl, program, attributes, uniforms: safeUniforms };
+  return {
+    gl,
+    program,
+    attributes,
+    uniforms: uniforms as Record<string, WebGLUniformLocation>,
+  };
 }
 
 /**

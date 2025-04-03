@@ -1,4 +1,5 @@
 import { Shape, WebGLContext } from "./types";
+import { mat4 } from "gl-matrix";
 
 /**
  * Creates a WebGL buffer for shape vertices
@@ -151,124 +152,104 @@ export function renderShape(
   shape: Shape,
   context: WebGLContext
 ) {
-  console.log("=== Rendering Shape ===");
-  console.log("Shape:", shape);
   const { program, attributes, uniforms } = context;
+  const {
+    x,
+    y,
+    width,
+    height,
+    fill,
+    stroke,
+    strokeWidth,
+    rotation = 0,
+  } = shape;
 
-  // Enable blending for transparent shapes
-  gl.enable(gl.BLEND);
-  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+  // Create model-view matrix
+  const modelViewMatrix = mat4.create();
+
+  // Translate to shape's position
+  mat4.translate(modelViewMatrix, modelViewMatrix, [
+    x + width / 2,
+    y + height / 2,
+    0,
+  ]);
+
+  // Rotate around center
+  mat4.rotate(
+    modelViewMatrix,
+    modelViewMatrix,
+    (rotation * Math.PI) / 180,
+    [0, 0, 1]
+  );
+
+  // Translate back to origin
+  mat4.translate(modelViewMatrix, modelViewMatrix, [
+    -(x + width / 2),
+    -(y + height / 2),
+    0,
+  ]);
 
   // Set uniforms
-  gl.useProgram(program);
-  console.log("Program activated");
-
-  // Set resolution uniform
   gl.uniform2f(uniforms.resolution, gl.canvas.width, gl.canvas.height);
-  console.log("Resolution uniform set:", gl.canvas.width, gl.canvas.height);
+  gl.uniformMatrix4fv(uniforms.modelViewMatrix, false, modelViewMatrix);
+  gl.uniform4f(
+    uniforms.fillColor,
+    parseInt(fill.slice(1, 3), 16) / 255,
+    parseInt(fill.slice(3, 5), 16) / 255,
+    parseInt(fill.slice(5, 7), 16) / 255,
+    1.0
+  );
+  gl.uniform4f(
+    uniforms.strokeColor,
+    parseInt(stroke.slice(1, 3), 16) / 255,
+    parseInt(stroke.slice(3, 5), 16) / 255,
+    parseInt(stroke.slice(5, 7), 16) / 255,
+    1.0
+  );
+  gl.uniform1f(uniforms.strokeWidth, strokeWidth / Math.min(width, height));
+  gl.uniform1f(uniforms.smoothing, 1.0 / Math.min(width, height));
 
-  // Convert colors to RGBA
-  const fillColor = hexToRGBA(shape.fill || "#333333");
-  const strokeColor = hexToRGBA(shape.stroke || "#000000");
-  console.log("Fill color:", fillColor);
-  console.log("Stroke color:", strokeColor);
+  // Create vertex buffer
+  const vertices = new Float32Array([
+    x,
+    y,
+    x + width,
+    y,
+    x,
+    y + height,
+    x + width,
+    y + height,
+  ]);
 
-  // Create vertices based on shape type
-  let vertices: Float32Array;
-  let vertexCount: number;
-  let drawMode: number;
-  let shapeTypeValue: number;
+  const vertexBuffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
+  gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
 
-  switch (shape.type) {
-    case "ellipse":
-      vertices = createEllipseVertices(
-        shape.x,
-        shape.y,
-        shape.width,
-        shape.height
-      );
-      drawMode = gl.TRIANGLE_FAN;
-      vertexCount = 130; // 128 segments + center + closing point
-      shapeTypeValue = 1; // Ellipse
-      break;
-    case "line":
-      vertices = createLineVertices(
-        shape.x,
-        shape.y,
-        shape.width,
-        shape.height
-      );
-      drawMode = gl.LINES;
-      vertexCount = 2;
-      shapeTypeValue = 2; // Line
-      break;
-    case "rectangle":
-    default:
-      vertices = createRectangleVertices(
-        shape.x,
-        shape.y,
-        shape.width,
-        shape.height
-      );
-      drawMode = gl.TRIANGLE_STRIP;
-      vertexCount = 4;
-      shapeTypeValue = 0; // Rectangle
-      break;
-  }
-
-  console.log("Shape dimensions:", {
-    x: shape.x,
-    y: shape.y,
-    width: shape.width,
-    height: shape.height,
-  });
-  console.log("Shape type value:", shapeTypeValue);
-
-  // Create and bind buffer
-  const buffer = createShapeBuffer(gl, vertices);
-  console.log("Buffer created");
-
-  // Set up attributes
-  gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-
-  // Enable attributes
+  // Set up vertex attributes
   gl.enableVertexAttribArray(attributes.position);
+  gl.vertexAttribPointer(attributes.position, 2, gl.FLOAT, false, 0, 0);
+
+  // Create texture coordinate buffer
+  const texCoords = new Float32Array([0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
+
+  const texCoordBuffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
+  gl.bufferData(gl.ARRAY_BUFFER, texCoords, gl.STATIC_DRAW);
+
+  // Set up texture coordinate attribute
   gl.enableVertexAttribArray(attributes.texCoord);
+  gl.vertexAttribPointer(attributes.texCoord, 2, gl.FLOAT, false, 0, 0);
 
-  // Set attribute pointers
-  gl.vertexAttribPointer(attributes.position, 2, gl.FLOAT, false, 16, 0);
-  gl.vertexAttribPointer(attributes.texCoord, 2, gl.FLOAT, false, 16, 8);
-  console.log("Attributes set up");
+  // Set shape type
+  gl.uniform1i(
+    uniforms.shapeType,
+    shape.type === "rectangle" ? 0 : shape.type === "ellipse" ? 1 : 2
+  );
 
-  // Set the shape type uniform
-  gl.uniform1i(uniforms.shapeType, shapeTypeValue);
+  // Draw the shape
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
-  // Set stroke and smoothing parameters based on shape type
-  if (shape.type === "rectangle") {
-    // For rectangles - thin, crisp border
-    gl.uniform1f(uniforms.strokeWidth, 0.02); // Border thickness
-    gl.uniform1f(uniforms.smoothing, 0.01); // Border smoothing
-  } else if (shape.type === "ellipse") {
-    // For ellipses - improved anti-aliasing
-    gl.uniform1f(uniforms.strokeWidth, 0.0); // No border
-    gl.uniform1f(uniforms.smoothing, 0.005); // Reduced smoothing for crisper edges
-  } else {
-    // For lines
-    gl.uniform1f(uniforms.strokeWidth, 0.0); // No border
-    gl.uniform1f(uniforms.smoothing, 0.01); // Minimal smoothing
-  }
-
-  // Set color uniforms
-  gl.uniform4fv(uniforms.fillColor, fillColor);
-  gl.uniform4fv(uniforms.strokeColor, strokeColor);
-
-  // Draw
-  gl.drawArrays(drawMode, 0, vertexCount);
-  console.log(`Shape drawn with mode ${drawMode} and ${vertexCount} vertices`);
-
-  // Cleanup
-  gl.deleteBuffer(buffer);
-  gl.disable(gl.BLEND);
-  console.log("Buffer deleted");
-  console.log("=== End Rendering Shape ===");
+  // Clean up
+  gl.deleteBuffer(vertexBuffer);
+  gl.deleteBuffer(texCoordBuffer);
 }

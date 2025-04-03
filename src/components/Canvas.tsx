@@ -131,8 +131,13 @@ export function Canvas({ width, height }: CanvasProps) {
     gl.clear(gl.COLOR_BUFFER_BIT);
 
     try {
-      // Render existing shapes
-      shapes.forEach((shape, index) => {
+      // Sort shapes by zIndex (lower zIndex first, so they're rendered below)
+      const sortedShapes = [...shapes]
+        .filter((shape) => shape.isVisible !== false) // Only render visible shapes
+        .sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
+
+      // Render existing shapes in order
+      sortedShapes.forEach((shape, index) => {
         console.log(
           `Rendering shape ${index}:`,
           shape.type,
@@ -140,12 +145,13 @@ export function Canvas({ width, height }: CanvasProps) {
           shape.x,
           shape.y,
           shape.width,
-          shape.height
+          shape.height,
+          `zIndex: ${shape.zIndex || 0}`
         );
         renderShape(gl, shape, glContextRef.current!);
       });
 
-      // Render current shape if drawing
+      // Render current shape if drawing (always on top)
       if (currentShape && isDrawing) {
         console.log(
           "Rendering current shape while drawing:",
@@ -167,9 +173,12 @@ export function Canvas({ width, height }: CanvasProps) {
 
   // Find a shape at the given position
   const findShapeAtPosition = (x: number, y: number): string | null => {
-    // Reverse order to check top-most shapes first
-    for (let i = shapes.length - 1; i >= 0; i--) {
-      const shape = shapes[i];
+    // Reverse order to check top-most shapes first (higher zIndex)
+    const sortedShapes = [...shapes]
+      .filter((shape) => shape.isVisible !== false) // Only consider visible shapes
+      .sort((a, b) => (b.zIndex || 0) - (a.zIndex || 0));
+
+    for (const shape of sortedShapes) {
       if (
         x >= shape.x &&
         x <= shape.x + shape.width &&
@@ -199,17 +208,27 @@ export function Canvas({ width, height }: CanvasProps) {
     console.log("Canvas position:", { x, y });
     console.log("Selected shape type:", selectedShape?.type);
 
-    // Try to find a shape under the cursor first for selection
+    // Find shape under cursor
     const shapeId = findShapeAtPosition(x, y);
 
-    // If we found a shape, select it and start moving
+    // If we found a shape
     if (shapeId) {
-      console.log("Selecting shape for move:", shapeId);
+      const shape = shapes.find((s) => s.id === shapeId);
+
+      console.log("Selecting shape:", shapeId);
       setSelectedShapeId(shapeId);
+
+      // Don't allow moving if the shape is locked
+      if (shape && shape.isLocked === true) {
+        console.log("Shape is locked, cannot move");
+        return;
+      }
+
       setIsSelecting(true);
       setIsDrawing(false);
       setIsMoving(true);
       setMoveStart({ x, y });
+      setSelectedShape(null); // Clear selected shape type when selecting existing shape
     }
     // If in drawing mode and we have a selected shape type, start drawing
     else if (selectedShape && !shapeId) {
@@ -234,140 +253,111 @@ export function Canvas({ width, height }: CanvasProps) {
         fill: defaultFill,
         stroke: defaultStroke,
         strokeWidth: 2,
+        zIndex: shapes.length, // Set zIndex to be on top
+        isVisible: true,
+        isLocked: false,
+        name: `${
+          selectedShape.type.charAt(0).toUpperCase() +
+          selectedShape.type.slice(1)
+        } ${shapes.length + 1}`,
       };
 
       console.log("Created initial shape:", newShape);
       setCurrentShape(newShape);
-    }
-    // If we didn't find a shape, deselect
-    else {
-      console.log("Deselecting shapes");
-      setSelectedShapeId(null);
-      setIsSelecting(false);
-      setIsMoving(false);
-      setSelectedShape(null);
     }
 
     console.log("=== End Mouse Down Event ===");
   };
 
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    // Skip if no canvas ref
+    if (!canvasRef.current) return;
+
+    const rect = canvasRef.current.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+
+    // If we're resizing a shape via SelectionControls, don't do anything here
+    if (useCanvasStore.getState().selectionState.activeHandle) return;
+
+    // If we're drawing a new shape
     if (isDrawing && drawStart && currentShape) {
-      console.log("=== Mouse Move Event ===");
+      const newWidth = Math.abs(x - drawStart.x);
+      const newHeight = Math.abs(y - drawStart.y);
+      const newX = Math.min(x, drawStart.x);
+      const newY = Math.min(y, drawStart.y);
 
-      const canvas = canvasRef.current;
-      if (!canvas) {
-        console.log("Canvas ref is null");
-        return;
-      }
-
-      const rect = canvas.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
-
-      console.log("Current mouse:", { x, y });
-      console.log("Draw start:", drawStart);
-
-      // Calculate new width and height
-      let newWidth = Math.abs(x - drawStart.x);
-      let newHeight = Math.abs(y - drawStart.y);
-      newWidth = Math.max(newWidth, 1); // Ensure minimum size
-      newHeight = Math.max(newHeight, 1); // Ensure minimum size
-
-      // Calculate new position (if dragging left or up)
-      const newX = x < drawStart.x ? x : drawStart.x;
-      const newY = y < drawStart.y ? y : drawStart.y;
-
-      // If shift key is pressed, maintain aspect ratio
-      if (e.shiftKey) {
-        const maxDimension = Math.max(newWidth, newHeight);
-        newWidth = maxDimension;
-        newHeight = maxDimension;
-      }
-
-      // Update current shape
-      const updatedShape = {
+      setCurrentShape({
         ...currentShape,
         x: newX,
         y: newY,
         width: newWidth,
         height: newHeight,
-      };
-
-      console.log(
-        "Updated shape:",
-        updatedShape.type,
-        updatedShape.id,
-        updatedShape.x,
-        updatedShape.y,
-        updatedShape.width,
-        updatedShape.height
-      );
-      setCurrentShape(updatedShape);
-
-      console.log("=== End Mouse Move Event ===");
-    } else if (isMoving && moveStart && selectedShapeId) {
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-
-      const rect = canvas.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
-
-      const deltaX = x - moveStart.x;
-      const deltaY = y - moveStart.y;
-
+      });
+    }
+    // If we're moving an existing shape
+    else if (isMoving && moveStart && selectedShapeId) {
       const shape = shapes.find((s) => s.id === selectedShapeId);
+
+      // Skip if the shape is locked
+      if (shape && shape.isLocked) return;
+
       if (shape) {
+        const deltaX = x - moveStart.x;
+        const deltaY = y - moveStart.y;
+
         updateShape(selectedShapeId, {
           x: shape.x + deltaX,
           y: shape.y + deltaY,
         });
+
         setMoveStart({ x, y });
       }
     }
   };
 
-  const handleMouseUp = () => {
-    console.log("=== Mouse Up Event ===");
-    console.log("Current shape on mouse up:", currentShape);
+  const handleMouseUp = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    // Skip if no canvas ref
+    if (!canvasRef.current) return;
 
-    // Only finish drawing if we were drawing
-    if (
-      isDrawing &&
-      currentShape &&
-      currentShape.width > 0 &&
-      currentShape.height > 0
-    ) {
-      // Ensure minimum size for better visibility
-      const finalShape = {
-        ...currentShape,
-        width: Math.max(currentShape.width, 10),
-        height: Math.max(currentShape.height, 10),
-      };
+    // If we were drawing a new shape, finalize it
+    if (isDrawing && currentShape) {
+      // Only add the shape if it has some size
+      if (currentShape.width > 5 && currentShape.height > 5) {
+        // Find the highest zIndex in the current shapes
+        const highestZIndex = shapes.reduce(
+          (max, shape) => Math.max(max, shape.zIndex || 0),
+          0
+        );
 
-      console.log(
-        "Adding shape to canvas:",
-        finalShape.type,
-        finalShape.id,
-        finalShape.x,
-        finalShape.y,
-        finalShape.width,
-        finalShape.height
-      );
-      addShape(finalShape);
-      setSelectedShapeId(finalShape.id);
+        // Create final shape with a higher zIndex to be on top
+        const finalShape = {
+          ...currentShape,
+          zIndex: highestZIndex + 1,
+          name:
+            currentShape.name ||
+            `${
+              currentShape.type.charAt(0).toUpperCase() +
+              currentShape.type.slice(1)
+            } ${shapes.length + 1}`,
+        };
+
+        console.log("Adding new shape:", finalShape);
+        addShape(finalShape);
+        setSelectedShapeId(finalShape.id);
+      } else {
+        console.log("Discarding tiny shape:", currentShape);
+      }
+
       setCurrentShape(null);
-    } else {
-      console.log("Not drawing or shape too small");
     }
 
-    setDrawStart(null);
+    // Reset all interaction states
     setIsDrawing(false);
-    setIsSelecting(false);
     setIsMoving(false);
+    setIsSelecting(false);
+    setDrawStart(null);
     setMoveStart(null);
-    console.log("=== End Mouse Up Event ===");
   };
 
   // Add keyboard event listener for delete key
@@ -383,6 +373,17 @@ export function Canvas({ width, height }: CanvasProps) {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [selectedShapeId, deleteShape, setSelectedShapeId]);
 
+  // Get cursor style based on current state
+  const getCursorStyle = () => {
+    if (selectedShape) {
+      return "crosshair";
+    } else if (isMoving) {
+      return "move";
+    } else {
+      return "default";
+    }
+  };
+
   return (
     <div className="relative w-full h-full">
       <canvas
@@ -394,12 +395,32 @@ export function Canvas({ width, height }: CanvasProps) {
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
         className="bg-zinc-900"
+        style={{
+          cursor: getCursorStyle(),
+          transform: `scale(${zoom}) translate(${pan.x}px, ${pan.y}px)`,
+        }}
       />
 
       {/* Render selection controls over the canvas */}
       <div className="absolute top-0 left-0 w-full h-full pointer-events-none">
         <SelectionControls />
       </div>
+
+      {shapes.map((shape) => (
+        <div
+          key={shape.id}
+          className="absolute"
+          style={{
+            left: shape.x,
+            top: shape.y,
+            width: shape.width,
+            height: shape.height,
+            transform: `rotate(${shape.rotation || 0}deg)`,
+            transformOrigin: "center center",
+            pointerEvents: "none",
+          }}
+        />
+      ))}
     </div>
   );
 }

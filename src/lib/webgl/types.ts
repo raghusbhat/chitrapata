@@ -5,21 +5,28 @@
 export interface WebGLContext {
   gl: WebGL2RenderingContext;
   program: WebGLProgram;
-  attributes: Record<string, number>;
+  attributes: {
+    position: number;
+    texCoord: number;
+  };
   uniforms: Record<string, WebGLUniformLocation>;
 }
 
 export interface Shape {
   id: string;
-  type: "rectangle" | "ellipse" | "line" | "text";
+  type: "rectangle" | "ellipse" | "line";
   x: number;
   y: number;
   width: number;
   height: number;
-  rotation: number;
   fill: string;
   stroke: string;
   strokeWidth: number;
+  rotation?: number;
+  name?: string;
+  zIndex?: number;
+  isVisible?: boolean;
+  isLocked?: boolean;
 }
 
 export interface TransformHandle {
@@ -36,6 +43,11 @@ export interface CanvasState {
   shapes: Shape[];
 }
 
+export interface Point {
+  x: number;
+  y: number;
+}
+
 export type ResizeHandle =
   | "top-left"
   | "top-right"
@@ -50,7 +62,7 @@ export type ResizeHandle =
 export interface SelectionState {
   selectedShapeId: string | null;
   activeHandle: ResizeHandle | null;
-  initialMousePosition: { x: number; y: number } | null;
+  initialMousePos: { x: number; y: number } | null;
   initialShapeBounds: {
     x: number;
     y: number;

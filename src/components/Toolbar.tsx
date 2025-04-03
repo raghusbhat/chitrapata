@@ -15,7 +15,7 @@ function ToolButton({ icon, label, isActive, onClick }: ToolButtonProps) {
       onClick={onClick}
       className={`p-2 rounded-lg transition-colors ${
         isActive
-          ? "bg-zinc-700 text-white"
+          ? "bg-primary/90 text-white"
           : "text-zinc-400 hover:bg-zinc-800 hover:text-white"
       }`}
       title={label}
@@ -45,8 +45,8 @@ export function Toolbar() {
       width: 0,
       height: 0,
       rotation: 0,
-      fill: "#3b82f6",
-      stroke: "#1d4ed8",
+      fill: "rgb(var(--primary-color))",
+      stroke: "rgb(var(--secondary-color))",
       strokeWidth: 2,
     };
     console.log("Setting selected shape:", newShape);
