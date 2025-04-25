@@ -16,8 +16,10 @@ const vertexShaderSource = `#version 300 es
     // Apply model-view transformation
     vec4 position = u_modelViewMatrix * vec4(a_position, 0, 1);
     
-    // Convert from pixels to clip space
-    vec2 clipSpace = (position.xy / u_resolution) * 2.0 - 1.0;
+    // Convert from pixels to clip space, accounting for device pixel ratio
+    vec2 zeroToOne = position.xy / u_resolution;
+    vec2 zeroToTwo = zeroToOne * 2.0;
+    vec2 clipSpace = zeroToTwo - 1.0;
     
     // Flip Y coordinate
     clipSpace.y = -clipSpace.y;
@@ -45,22 +47,40 @@ const fragmentShaderSource = `#version 300 es
   
   void main() {
     if (u_shapeType == 0) { // Rectangle
+      // Calculate distance from edges
       float distFromEdgeX = min(v_texCoord.x, 1.0 - v_texCoord.x);
       float distFromEdgeY = min(v_texCoord.y, 1.0 - v_texCoord.y);
       float distFromEdge = min(distFromEdgeX, distFromEdgeY);
       
-      if (distFromEdge < u_strokeWidth) {
-        float borderAlpha = smoothstep(0.0, u_smoothing, distFromEdge / u_strokeWidth);
-        outColor = mix(u_strokeColor, u_fillColor, borderAlpha);
+      // For stroke
+      float strokeStart = u_strokeWidth;
+      float strokeEnd = u_strokeWidth + u_smoothing;
+      
+      // If we're within the stroke width
+      if (distFromEdge < strokeEnd) {
+        float strokeAlpha = 1.0 - smoothstep(strokeStart, strokeEnd, distFromEdge);
+        outColor = mix(u_fillColor, u_strokeColor, strokeAlpha);
       } else {
+        // Inside the shape, use fill color with its original alpha
         outColor = u_fillColor;
       }
     } 
     else if (u_shapeType == 1) { // Ellipse
       vec2 center = vec2(0.5, 0.5);
       float dist = length(v_texCoord - center) * 2.0;
-      float alpha = 1.0 - smoothstep(1.0 - u_smoothing, 1.0, dist);
-      outColor = vec4(u_fillColor.rgb, u_fillColor.a * alpha);
+      
+      // For stroke
+      float strokeStart = 1.0 - u_strokeWidth;
+      float strokeEnd = strokeStart + u_smoothing;
+      
+      if (dist > strokeStart) {
+        float strokeAlpha = 1.0 - smoothstep(strokeStart, strokeEnd, dist);
+        outColor = mix(vec4(0.0), u_strokeColor, strokeAlpha);
+      } else {
+        float alpha = 1.0 - smoothstep(1.0 - u_smoothing, 1.0, dist);
+        // Use fill color with its original alpha
+        outColor = u_fillColor;
+      }
     }
     else { // Line
       outColor = u_strokeColor;
@@ -73,7 +93,15 @@ const fragmentShaderSource = `#version 300 es
  */
 export function createWebGLContext(canvas: HTMLCanvasElement): WebGLContext {
   console.log("Creating WebGL context for canvas:", canvas);
-  const gl = canvas.getContext("webgl2");
+
+  // Create WebGL2 context with alpha disabled to prevent blending issues with white colors
+  const gl = canvas.getContext("webgl2", {
+    alpha: false, // Disabling alpha channel in the context
+    premultipliedAlpha: false,
+    antialias: true,
+    preserveDrawingBuffer: true,
+  });
+
   if (!gl) {
     throw new Error("WebGL2 not supported");
   }

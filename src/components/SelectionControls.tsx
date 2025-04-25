@@ -76,14 +76,14 @@ const Handle: React.FC<HandleProps> = ({
 export function SelectionControls() {
   const {
     selectedShapeId,
-    getSelectedShape,
     startResizing,
     resizeSelectedShape,
     endResizing,
     selectionState,
   } = useCanvasStore();
 
-  const shape = getSelectedShape();
+  // Subscribe selected shape to react to rotation/resizing updates
+  const shape = useCanvasStore((state) => state.getSelectedShape());
 
   const handleMouseDown = (handle: ResizeHandle, e: React.MouseEvent) => {
     if (!selectedShapeId || !shape) return;
@@ -119,7 +119,7 @@ export function SelectionControls() {
         document.removeEventListener("mouseup", handleMouseUp);
       };
     }
-  }, [selectionState.activeHandle, selectedShapeId]);
+  }, [selectionState.activeHandle]);
 
   if (!shape || !selectedShapeId) return null;
 

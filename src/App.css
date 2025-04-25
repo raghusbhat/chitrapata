@@ -1,0 +1,32 @@
+/* Add styles for panel resize handles */
+[data-panel-resize-handle] {
+  transition: background-color 150ms ease;
+  background-color: #27272a; /* bg-zinc-800 */
+  position: relative;
+}
+
+[data-panel-resize-handle]:hover,
+[data-panel-resize-handle][data-resize-handle-active] {
+  background-color: #6366f1; /* bg-indigo-500 */
+}
+
+/* Custom cursor only for horizontal resize handles */
+[data-panel-resize-handle-direction="horizontal"] {
+  cursor: col-resize;
+}
+
+[data-panel-resize-handle-direction="horizontal"]::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 1px;
+  height: 20px;
+  background-color: rgba(255, 255, 255, 0.3);
+}
+
+[data-panel-resize-handle-direction="horizontal"]:hover::after,
+[data-panel-resize-handle-direction="horizontal"][data-resize-handle-active]::after {
+  background-color: rgba(255, 255, 255, 0.7);
+}
