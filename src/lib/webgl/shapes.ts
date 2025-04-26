@@ -290,6 +290,7 @@ export function renderShape(
   const normalizedStrokeWidth =
     (strokeWidth * dpr) / Math.min(scaledWidth, scaledHeight);
   gl.uniform1f(uniforms.strokeWidth, normalizedStrokeWidth);
+  // Reset smoothing based on shape dimensions
   gl.uniform1f(uniforms.smoothing, 1.0 / Math.min(scaledWidth, scaledHeight));
 
   // Get appropriate vertices for shape type

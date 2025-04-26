@@ -113,7 +113,7 @@ export function Canvas({ width, height }: CanvasProps) {
       gl.clearColor(0.1, 0.1, 0.1, 1.0);
       gl.clear(gl.COLOR_BUFFER_BIT);
 
-      // Enable blending for transparent shapes
+      // Enable blending for anti-aliased edges
       gl.enable(gl.BLEND);
       gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 
@@ -195,11 +195,18 @@ export function Canvas({ width, height }: CanvasProps) {
       return;
     }
 
-    const { gl } = glContextRef.current;
+    // Activate shader program before drawing
+    const { gl, program } = glContextRef.current;
+    gl.useProgram(program);
+
+    // Render directly to default framebuffer (antialias via context's antialias flag)
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
     // Clear the canvas
     gl.clear(gl.COLOR_BUFFER_BIT);
 
+    // Enable blending for anti-aliased edges
+    gl.enable(gl.BLEND);
     // Reset blend function before rendering
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 
@@ -452,18 +459,31 @@ export function Canvas({ width, height }: CanvasProps) {
 
     // If we're drawing a new shape
     if (isDrawing && drawStart && currentShape) {
-      const newWidth = Math.abs(x - drawStart.x);
-      const newHeight = Math.abs(y - drawStart.y);
-      const newX = Math.min(x, drawStart.x);
-      const newY = Math.min(y, drawStart.y);
+      // For lines, use start and two points
+      if (currentShape.type === "line") {
+        const dx = x - drawStart.x;
+        const dy = y - drawStart.y;
+        setCurrentShape({
+          ...currentShape,
+          x: drawStart.x,
+          y: drawStart.y,
+          width: dx,
+          height: dy,
+        });
+      } else {
+        const newWidth = Math.abs(x - drawStart.x);
+        const newHeight = Math.abs(y - drawStart.y);
+        const newX = Math.min(x, drawStart.x);
+        const newY = Math.min(y, drawStart.y);
 
-      setCurrentShape({
-        ...currentShape,
-        x: newX,
-        y: newY,
-        width: newWidth,
-        height: newHeight,
-      });
+        setCurrentShape({
+          ...currentShape,
+          x: newX,
+          y: newY,
+          width: newWidth,
+          height: newHeight,
+        });
+      }
     }
     // If we're moving an existing shape
     else if (isMoving && moveStart && selectedShapeId) {
@@ -507,8 +527,10 @@ export function Canvas({ width, height }: CanvasProps) {
 
     // If we were drawing a new shape, finalize it
     if (isDrawing && currentShape) {
-      // Only add the shape if it has some size
-      if (currentShape.width > 5 && currentShape.height > 5) {
+      // Only add the shape if it has sufficient size (special case for lines)
+      const isLine = currentShape.type === "line";
+      const length = Math.hypot(currentShape.width, currentShape.height);
+      if ((isLine && length > 5) || (!isLine && currentShape.width > 5 && currentShape.height > 5)) {
         // Find the highest zIndex in the current shapes
         const highestZIndex = shapes.reduce(
           (max, shape) => Math.max(max, shape.zIndex || 0),
@@ -663,8 +685,8 @@ function getDefaultPropertiesForShape(type: ShapeType): Partial<Shape> {
       return {
         rotation: 0,
         fill: "#FFFFFF",
-        stroke: "#000000",
-        strokeWidth: 2,
+        stroke: "transparent",
+        strokeWidth: 0,
         isVisible: true,
         isLocked: false,
       };
@@ -672,8 +694,8 @@ function getDefaultPropertiesForShape(type: ShapeType): Partial<Shape> {
       return {
         rotation: 0,
         fill: "#FFFFFF",
-        stroke: "#000000",
-        strokeWidth: 2,
+        stroke: "transparent",
+        strokeWidth: 0,
         isVisible: true,
         isLocked: false,
       };
@@ -681,7 +703,7 @@ function getDefaultPropertiesForShape(type: ShapeType): Partial<Shape> {
       return {
         rotation: 0,
         fill: "transparent",
-        stroke: "#000000",
+        stroke: "#FFFFFF",
         strokeWidth: 2,
         isVisible: true,
         isLocked: false,

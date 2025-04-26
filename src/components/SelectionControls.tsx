@@ -2,8 +2,21 @@ import React, { useEffect, useState } from "react";
 import { useCanvasStore } from "../store/canvasStore";
 import { ResizeHandle } from "../lib/webgl/types";
 
-// Add the custom cursor as a constant at the top
-const ROTATE_CURSOR = `url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><g transform="translate(16,16) scale(0.07,0.07) translate(-242,-258)"><path d="M105.011,215.096L87.069,262.1L135.437,248.251C119.542,247.569 104.329,230.992 105.011,215.096Z" fill="white"/><path d="M345.609,215.192L363.8,262.1L315.359,248.508C331.251,247.741 346.376,231.084 345.609,215.192Z" fill="white"/><path d="M113.593,237.759C187.19,177.459 261.694,176.607 337.147,237.9" stroke="white" fill="none" stroke-width="15"/></g></svg>') 16 16, auto`;
+// Double-headed arrow SVG paths
+const ROTATE_PATHS = '<path d="M105.011,215.096L87.069,262.1L135.437,248.251C119.542,247.569 104.329,230.992 105.011,215.096Z" fill="white"/><path d="M345.609,215.192L363.8,262.1L315.359,248.508C331.251,247.741 346.376,231.084 345.609,215.192Z" fill="white"/><path d="M113.593,237.759C187.19,177.459 261.694,176.607 337.147,237.9" stroke="white" fill="none" stroke-width="15"/>';
+// Return a CSS cursor URL with the arrow rotated for the given handle
+function getRotateCursor(handle: ResizeHandle): string {
+  // Figma-like arrow orientation: arc faces the shape
+  const angleMap: Partial<Record<ResizeHandle, number>> = {
+    "top-left": -135,
+    "top-right": -45,
+    "bottom-right": 45,
+    "bottom-left": 135,
+    "rotate": 0,
+  };
+  const angle = angleMap[handle] ?? 0;
+  return `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'><g transform='translate(16,16) rotate(${angle}) scale(0.07,0.07) translate(-242,-258)'>${ROTATE_PATHS}</g></svg>") 16 16, auto`;
+}
 
 interface HandleProps {
   position: { x: number; y: number };
@@ -15,15 +28,30 @@ interface HandleProps {
 // Add a new component for rotation zones with cursor persistence
 const RotationZone: React.FC<HandleProps> = ({
   position,
+  cursor,
   handle,
   onMouseDown,
 }) => {
+  // Enhanced rotation zone: larger hit area and diagonal arrow rotation
+  const size = 32;
+  const half = size / 2;
+  const posX = position.x;
+  const posY = position.y + (handle.includes("bottom") ? half : -half);
+  const angleMap: Partial<Record<ResizeHandle, number>> = {
+    "top-left": -45,
+    "top-right": 45,
+    // Inverted bottom-corner arrows
+    "bottom-right": -45,
+    "bottom-left": 45,
+  };
+  const angle = angleMap[handle] ?? 0;
+
   const [isRotating, setIsRotating] = useState(false);
 
   useEffect(() => {
     if (isRotating) {
       // Add a class to the body when rotating to maintain cursor
-      document.body.style.cursor = ROTATE_CURSOR;
+      document.body.style.cursor = cursor;
 
       const handleMouseUp = () => {
         setIsRotating(false);
@@ -36,16 +64,16 @@ const RotationZone: React.FC<HandleProps> = ({
         document.body.style.cursor = "";
       };
     }
-  }, [isRotating]);
+  }, [isRotating, cursor]);
 
   return (
     <div
-      className="absolute w-6 h-6"
+      className="absolute w-8 h-8"
       style={{
-        left: `${position.x}px`,
-        top: `${position.y - 24}px`, // Position it 24px above the corner
-        cursor: ROTATE_CURSOR,
-        transform: "translate(-50%, -50%)",
+        left: `${posX}px`,
+        top: `${posY}px`,
+        cursor,
+        transform: `translate(-50%, -50%) rotate(${angle}deg)`,
       }}
       onMouseDown={(e) => {
         setIsRotating(true);
@@ -123,6 +151,18 @@ export function SelectionControls() {
 
   if (!shape || !selectedShapeId) return null;
 
+  // For lines, show only start/end handles (no bounding box)
+  if (shape.type === "line") {
+    const start = { x: shape.x, y: shape.y };
+    const end = { x: shape.x + shape.width, y: shape.y + shape.height };
+    return (
+      <>
+        <Handle position={start} cursor="pointer" handle="top-left" onMouseDown={handleMouseDown} />
+        <Handle position={end} cursor="pointer" handle="bottom-right" onMouseDown={handleMouseDown} />
+      </>
+    );
+  }
+
   const { x, y, width, height, rotation = 0 } = shape;
 
   return (
@@ -151,7 +191,7 @@ export function SelectionControls() {
         {/* Corner handles with rotation zones */}
         <RotationZone
           position={{ x: 0, y: 0 }}
-          cursor={ROTATE_CURSOR}
+          cursor={getRotateCursor("top-left")}
           handle="top-left"
           onMouseDown={handleMouseDown}
         />
@@ -164,7 +204,7 @@ export function SelectionControls() {
 
         <RotationZone
           position={{ x: width, y: 0 }}
-          cursor={ROTATE_CURSOR}
+          cursor={getRotateCursor("top-right")}
           handle="top-right"
           onMouseDown={handleMouseDown}
         />
@@ -177,7 +217,7 @@ export function SelectionControls() {
 
         <RotationZone
           position={{ x: 0, y: height }}
-          cursor={ROTATE_CURSOR}
+          cursor={getRotateCursor("bottom-left")}
           handle="bottom-left"
           onMouseDown={handleMouseDown}
         />
@@ -190,7 +230,7 @@ export function SelectionControls() {
 
         <RotationZone
           position={{ x: width, y: height }}
-          cursor={ROTATE_CURSOR}
+          cursor={getRotateCursor("bottom-right")}
           handle="bottom-right"
           onMouseDown={handleMouseDown}
         />
@@ -227,6 +267,32 @@ export function SelectionControls() {
           onMouseDown={handleMouseDown}
         />
 
+        {/* Edge rotation zones */}
+        <RotationZone
+          position={{ x: width / 2, y: 0 }}
+          cursor={getRotateCursor("rotate")}
+          handle="rotate"
+          onMouseDown={handleMouseDown}
+        />
+        <RotationZone
+          position={{ x: width, y: height / 2 }}
+          cursor={getRotateCursor("rotate")}
+          handle="rotate"
+          onMouseDown={handleMouseDown}
+        />
+        <RotationZone
+          position={{ x: width / 2, y: height }}
+          cursor={getRotateCursor("rotate")}
+          handle="rotate"
+          onMouseDown={handleMouseDown}
+        />
+        <RotationZone
+          position={{ x: 0, y: height / 2 }}
+          cursor={getRotateCursor("rotate")}
+          handle="rotate"
+          onMouseDown={handleMouseDown}
+        />
+
         {/* Rotation handle */}
         <div
           className="absolute flex items-center justify-center"
@@ -236,10 +302,10 @@ export function SelectionControls() {
             width: "8px",
             height: "8px",
             transform: "translate(-50%, -50%)",
-            cursor: ROTATE_CURSOR,
+            cursor: getRotateCursor("rotate"),
           }}
           onMouseDown={(e) => {
-            document.body.style.cursor = ROTATE_CURSOR;
+            document.body.style.cursor = getRotateCursor("rotate");
             handleMouseDown("rotate", e);
           }}
           onMouseUp={() => {
