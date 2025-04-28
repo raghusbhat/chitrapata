@@ -9,12 +9,15 @@ const vertexShaderSource = `#version 300 es
   
   uniform vec2 u_resolution;
   uniform mat4 u_modelViewMatrix;
+  uniform mat4 u_cameraMatrix;
   
   out vec2 v_texCoord;
   
   void main() {
     // Apply model-view transformation
-    vec4 position = u_modelViewMatrix * vec4(a_position, 0, 1);
+    vec4 mvPosition = u_modelViewMatrix * vec4(a_position, 0, 1);
+    // Apply camera (pan & zoom)
+    vec4 position = u_cameraMatrix * mvPosition;
     
     // Convert from pixels to clip space, accounting for device pixel ratio
     vec2 zeroToOne = position.xy / u_resolution;
@@ -127,6 +130,7 @@ export function createWebGLContext(canvas: HTMLCanvasElement): WebGLContext {
   const uniforms = {
     resolution: gl.getUniformLocation(program, "u_resolution"),
     modelViewMatrix: gl.getUniformLocation(program, "u_modelViewMatrix"),
+    cameraMatrix: gl.getUniformLocation(program, "u_cameraMatrix"),
     fillColor: gl.getUniformLocation(program, "u_fillColor"),
     strokeColor: gl.getUniformLocation(program, "u_strokeColor"),
     strokeWidth: gl.getUniformLocation(program, "u_strokeWidth"),

@@ -5,7 +5,7 @@ import { Shape, ShapeType } from "../lib/webgl/types";
 import { renderShape } from "../lib/webgl/shapes";
 import { v4 as uuidv4 } from "uuid";
 import { SelectionControls } from "./SelectionControls";
-import { FiSquare, FiMaximize, FiLayers } from "react-icons/fi";
+import { mat4 } from "gl-matrix";
 
 interface CanvasProps {
   width: number;
@@ -19,8 +19,6 @@ export function Canvas({ width, height }: CanvasProps) {
   );
   const {
     shapes,
-    zoom,
-    pan,
     isDrawing,
     setIsDrawing,
     addShape,
@@ -34,18 +32,9 @@ export function Canvas({ width, height }: CanvasProps) {
     getFlattenedShapes,
     invalidateCache,
     selectedShapeIds,
-    deleteSelectedShapes,
     toggleShapeSelection,
-    setMultiSelecting,
-    isMultiSelecting,
-    setMultiSelectRect,
-    multiSelectRect,
     currentDrawingTool,
     setCurrentDrawingTool,
-    isDragging,
-    setIsDragging,
-    setLastMousePosition,
-    lastMousePosition,
     isResizing,
     setIsResizing,
     scale,
@@ -53,6 +42,7 @@ export function Canvas({ width, height }: CanvasProps) {
     canvasOffset,
     setCanvasOffset,
     setSelectedShapeIds,
+    selectionState,
   } = useCanvasStore();
 
   const [drawStart, setDrawStart] = useState<{ x: number; y: number } | null>(
@@ -66,6 +56,9 @@ export function Canvas({ width, height }: CanvasProps) {
   );
   const [resizeHandle, setResizeHandle] = useState<string | null>(null);
   const initialClickPosRef = useRef<{ x: number; y: number } | null>(null);
+  const [isPanning, setIsPanning] = useState<boolean>(false);
+  const [panStart, setPanStart] = useState<{ x: number; y: number } | null>(null);
+  const [hoveredShapeId, setHoveredShapeId] = useState<string | null>(null);
 
   // Initialize WebGL context
   useEffect(() => {
@@ -196,8 +189,14 @@ export function Canvas({ width, height }: CanvasProps) {
     }
 
     // Activate shader program before drawing
-    const { gl, program } = glContextRef.current;
+    const { gl, program } = glContextRef.current!;
     gl.useProgram(program);
+    const { uniforms } = glContextRef.current!;
+    const camMatrix = mat4.create();
+    const dpr = window.devicePixelRatio || 1;
+    mat4.translate(camMatrix, camMatrix, [canvasOffset.x * dpr, canvasOffset.y * dpr, 0]);
+    mat4.scale(camMatrix, camMatrix, [scale, scale, 1]);
+    gl.uniformMatrix4fv(uniforms.cameraMatrix, false, camMatrix);
 
     // Render directly to default framebuffer (antialias via context's antialias flag)
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
@@ -273,7 +272,7 @@ export function Canvas({ width, height }: CanvasProps) {
     } catch (error) {
       console.error("Error rendering shapes:", error);
     }
-  }, [flattenedShapes, currentShape, isDrawing]);
+  }, [flattenedShapes, currentShape, isDrawing, scale, canvasOffset]);
 
   // Find a shape at the given position, considering hierarchy
   const findShapeAtPosition = useCallback(
@@ -339,17 +338,38 @@ export function Canvas({ width, height }: CanvasProps) {
   }, [selectedShapeId, shapes, ungroup]);
 
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    // Skip Canvas logic when a resize handle is active
+    if (selectionState.activeHandle) return;
+    // Setup mouse buttons
+    const isLeft = e.button === 0;
+    const isMiddle = e.button === 1;
+    const isRight = e.button === 2;
+    // Suppress default context menu for middle/right
+    if (isMiddle || isRight) e.preventDefault();
+    // Compute canvas-relative coords
     const canvas = canvasRef.current;
     if (!canvas) return;
-
     const rect = canvas.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
-
-    // Find shape under cursor
+    // Hit-test shape
     const shapeId = findShapeAtPosition(x, y);
+    // Pan: middle-click OR Space-held + left-click on any area
+    if (isMiddle || (isLeft && isPanning)) {
+      e.preventDefault();
+      setPanStart({ x: e.clientX, y: e.clientY });
+      // Cancel any shape interactions
+      setIsMoving(false);
+      setIsDrawing(false);
+      setIsSelecting(false);
+      setDrawStart(null);
+      setMoveStart(null);
+      return;
+    }
+    // Only left-click proceeds to shape logic
+    if (!isLeft) return;
 
-    // Add shape of the selected type
+    // Add shape of the selected tool
     if (currentDrawingTool) {
       setDrawStart({ x, y });
       setIsDrawing(true);
@@ -447,10 +467,14 @@ export function Canvas({ width, height }: CanvasProps) {
   };
 
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    // Skip if no canvas ref
+    if (panStart) {
+      const dx = e.clientX - panStart.x;
+      const dy = e.clientY - panStart.y;
+      setCanvasOffset({ x: canvasOffset.x + dx, y: canvasOffset.y + dy });
+      setPanStart({ x: e.clientX, y: e.clientY });
+      return;
+    }
     if (!canvasRef.current) return;
-
-    // Check if resizing using the component state instead of store
     if (isResizing) return;
 
     const rect = canvasRef.current.getBoundingClientRect();
@@ -519,10 +543,26 @@ export function Canvas({ width, height }: CanvasProps) {
         invalidateCache(); // Ensure hierarchical cache is updated
       }
     }
+    // Hover detection when idle (no drawing/moving/panning)
+    if (!isDrawing && !isMoving && !panStart) {
+      const hoverId = findShapeAtPosition(x, y);
+      if (hoverId !== hoveredShapeId) {
+        setHoveredShapeId(hoverId);
+      }
+    }
   };
 
   const handleMouseUp = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    // Skip if no canvas ref
+    if (panStart) {
+      setPanStart(null);
+      // Reset interactions after pan
+      setIsMoving(false);
+      setIsDrawing(false);
+      setIsSelecting(false);
+      setDrawStart(null);
+      setMoveStart(null);
+      return;
+    }
     if (!canvasRef.current) return;
 
     // If we were drawing a new shape, finalize it
@@ -597,6 +637,24 @@ export function Canvas({ width, height }: CanvasProps) {
     }
   };
 
+  const handleWheel = useCallback((e: React.WheelEvent<HTMLCanvasElement>) => {
+    e.preventDefault();
+    if (e.ctrlKey || e.metaKey) {
+      const rect = canvasRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      const delta = -e.deltaY * 0.001;
+      const newScale = Math.max(0.1, scale * (1 + delta));
+      const offsetX = canvasOffset.x - (x / scale) * (newScale - scale);
+      const offsetY = canvasOffset.y - (y / scale) * (newScale - scale);
+      setScale(newScale);
+      setCanvasOffset({ x: offsetX, y: offsetY });
+    } else {
+      setCanvasOffset({ x: canvasOffset.x + e.deltaX, y: canvasOffset.y + e.deltaY });
+    }
+  }, [scale, canvasOffset, setScale, setCanvasOffset]);
+
   // Add keyboard event listener for delete key
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -642,36 +700,85 @@ export function Canvas({ width, height }: CanvasProps) {
     invalidateCache,
   ]);
 
-  // Get cursor style based on current state
+  // Space key toggles panning
+  useEffect(() => {
+    const handleKeyDownSpace = (e: KeyboardEvent) => {
+      if (e.code === "Space") {
+        e.preventDefault();
+        setIsPanning(true);
+      }
+    };
+    const handleKeyUpSpace = (e: KeyboardEvent) => {
+      if (e.code === "Space") {
+        e.preventDefault();
+        setIsPanning(false);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDownSpace);
+    window.addEventListener("keyup", handleKeyUpSpace);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDownSpace);
+      window.removeEventListener("keyup", handleKeyUpSpace);
+    };
+  }, []);
+
   const getCursorStyle = () => {
-    if (currentDrawingTool) {
-      return "crosshair";
-    } else if (isMoving) {
-      return "move";
-    } else {
-      return "default";
-    }
+    if (panStart) return "grabbing";
+    if (isPanning) return "grab";
+    if (currentDrawingTool) return "crosshair";
+    if (isMoving) return "move";
+    return "default";
   };
 
   return (
     <div className="relative w-full h-full">
       <canvas
         ref={canvasRef}
+        onContextMenu={(e) => e.preventDefault()}
         width={width}
         height={height}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
+        onWheel={handleWheel}
         className="bg-zinc-900"
-        style={{
-          cursor: getCursorStyle(),
-          transform: `scale(${zoom}) translate(${pan.x}px, ${pan.y}px)`,
-        }}
+        style={{ cursor: getCursorStyle() }}
       />
 
       {/* Render selection controls over the canvas */}
-      <div className="absolute top-0 left-0 w-full h-full pointer-events-none">
+      <div
+        className="absolute top-0 left-0 w-full h-full pointer-events-none"
+        style={{
+          transform: `matrix(${scale}, 0, 0, ${scale}, ${canvasOffset.x}, ${canvasOffset.y})`,
+          transformOrigin: '0 0',
+        }}
+      >
+        {/* Hover highlight outline (skip for lines) */}
+        {hoveredShapeId && hoveredShapeId !== selectedShapeId && (() => {
+          const shape = flattenedShapes.find((s) => s.id === hoveredShapeId);
+          // Don't show hover box for line shapes
+          if (!shape || shape.type === "line") return null;
+          const hx = shape.absoluteTransform?.x ?? shape.x;
+          const hy = shape.absoluteTransform?.y ?? shape.y;
+          const rotationAngle = shape.absoluteTransform?.rotation ?? shape.rotation;
+          return (
+            <div
+              className="absolute"
+              style={{
+                left: hx,
+                top: hy,
+                width: shape.width,
+                height: shape.height,
+                border: '1px solid rgba(96,165,250,0.7)',
+                borderRadius: '4px',
+                transform: `rotate(${rotationAngle}deg)`,
+                transformOrigin: 'center center',
+                pointerEvents: 'none',
+              }}
+            />
+          );
+        })()}
         <SelectionControls />
       </div>
     </div>

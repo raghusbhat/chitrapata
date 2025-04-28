@@ -1011,6 +1011,34 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       return;
     }
 
+    // Special-case resizing for lines: move only the clicked endpoint
+    if (shape.type === "line") {
+      const endX = initialShapeBounds.x + initialShapeBounds.width;
+      const endY = initialShapeBounds.y + initialShapeBounds.height;
+      let newX = initialShapeBounds.x;
+      let newY = initialShapeBounds.y;
+      let newWidth = initialShapeBounds.width;
+      let newHeight = initialShapeBounds.height;
+      if (activeHandle === "top-left") {
+        newX = initialShapeBounds.x + currentMousePos.x - initialMousePos.x;
+        newY = initialShapeBounds.y + currentMousePos.y - initialMousePos.y;
+        newWidth = endX - newX;
+        newHeight = endY - newY;
+      } else if (activeHandle === "bottom-right") {
+        newWidth = initialShapeBounds.width + currentMousePos.x - initialMousePos.x;
+        newHeight = initialShapeBounds.height + currentMousePos.y - initialMousePos.y;
+      }
+      set((state) => ({
+        shapes: state.shapes.map((s) =>
+          s.id === state.selectedShapeId
+            ? { ...s, x: newX, y: newY, width: newWidth, height: newHeight }
+            : s
+        ),
+        cache: { ...state.cache, needsUpdate: true },
+      }));
+      return;
+    }
+
     // Handle resizing
     const deltaX = currentMousePos.x - initialMousePos.x;
     const deltaY = currentMousePos.y - initialMousePos.y;
