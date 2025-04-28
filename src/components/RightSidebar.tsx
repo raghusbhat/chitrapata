@@ -37,7 +37,7 @@ interface Message {
 }
 
 export function RightSidebar() {
-  const { shapes, selectedShapeId, selectedShapeIds, updateShape } =
+  const { shapes, selectedShapeId, selectedShapeIds, updateShape, addShape } =
     useCanvasStore();
   const [selectedShape, setSelectedShape] = useState<Shape | null>(null);
   const [multipleSelection, setMultipleSelection] = useState(false);
@@ -105,12 +105,21 @@ export function RightSidebar() {
     try {
       // Call the AI API using our utility function
       const aiResponse = await generateAIResponse(prompt);
-
-      // Add AI response to messages
-      setMessages((prev) => [
-        ...prev,
-        { type: "assistant", content: aiResponse },
-      ]);
+      if (Array.isArray(aiResponse)) {
+        // Add each JSON-defined shape to canvas
+        aiResponse.forEach((shape) => addShape(shape));
+        // Notify user
+        setMessages((prev) => [
+          ...prev,
+          { type: "assistant", content: "Added shapes to canvas." },
+        ]);
+      } else {
+        // Display text response
+        setMessages((prev) => [
+          ...prev,
+          { type: "assistant", content: aiResponse },
+        ]);
+      }
     } catch (error) {
       console.error("Error calling AI API:", error);
 
@@ -277,17 +286,15 @@ export function RightSidebar() {
             >
               <div className="flex justify-between items-start">
                 <p className="text-xs">{message.content}</p>
-                {message.type === "user" && (
-                  <div className="flex ml-2">
-                    <button
-                      onClick={() => handleCopyText(message.content)}
-                      className="p-1 text-zinc-400 hover:text-white transition-colors"
-                      title="Copy prompt"
-                    >
-                      <FiCopy className="w-3 h-3" />
-                    </button>
-                  </div>
-                )}
+                <div className="flex ml-2">
+                  <button
+                    onClick={() => handleCopyText(message.content)}
+                    className="p-1 text-zinc-400 hover:text-white transition-colors"
+                    title="Copy text"
+                  >
+                    <FiCopy className="w-3 h-3" />
+                  </button>
+                </div>
               </div>
             </div>
           ))}
@@ -303,9 +310,15 @@ export function RightSidebar() {
               type="text"
               value={inputMessage}
               onChange={(e) => setInputMessage(e.target.value)}
-              onKeyDown={(e) =>
-                e.key === "Enter" && !isLoading && handleSendMessage()
-              }
+              // intercept before any parent DOM handlers (including shortcuts)
+              onKeyDownCapture={(e) => e.stopPropagation()}
+              onKeyDown={(e) => {
+                e.stopPropagation();
+                if (e.key === "Enter" && !isLoading) {
+                  e.preventDefault();
+                  handleSendMessage();
+                }
+              }}
               placeholder="Ask AI for design help..."
               className="flex-1 bg-zinc-800 text-xs rounded px-3 py-2 focus:outline-none focus:ring-1 focus:ring-indigo-500"
               disabled={isLoading}

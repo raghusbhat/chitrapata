@@ -40,6 +40,14 @@ router.post(
         });
       }
 
+      // Add strict instructions for JSON output: no markdown, color matching, default stroke
+      const systemInstructions =
+        "You are a UI component generator. Respond ONLY with a plain JSON array of components (no markdown/code fences). " +
+        "Each component must include: type, x, y, width, height, fill, stroke, strokeWidth, rotation, zIndex, isVisible. " +
+        "The fill property must match the color specified in the user's request (CSS color names or hex codes). " +
+        "The stroke property should default to 'black'.";
+      const fullPrompt = `${systemInstructions}\nUser request: ${prompt}`;
+
       // Call Gemini API using the latest model: gemini-2.0-flash
       const response = await fetch(
         `https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
@@ -53,7 +61,7 @@ router.post(
               {
                 parts: [
                   {
-                    text: prompt,
+                    text: fullPrompt,
                   },
                 ],
               },
@@ -71,16 +79,25 @@ router.post(
 
       const data = await response.json();
 
-      // Extract the response text from the Gemini API response
+      // Extract response text
       const aiResponse =
         data.candidates?.[0]?.content?.parts?.[0]?.text ||
         "No response generated";
+      console.log("📥 Gemini API response:", aiResponse);
 
-      // Log the Gemini API response
-      console.log("📥 Gemini API response:");
-      console.log(aiResponse);
-
-      res.json({ response: aiResponse });
+      // Strip markdown fences if present and parse JSON
+      let jsonText = aiResponse.trim();
+      const fenceMatch = jsonText.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+      if (fenceMatch) jsonText = fenceMatch[1];
+      try {
+        const parsed = JSON.parse(jsonText);
+        if (Array.isArray(parsed)) {
+          return res.json({ response: parsed });
+        }
+      } catch {
+        // Not valid JSON, fall back to raw text
+      }
+      return res.json({ response: aiResponse });
     } catch (error) {
       console.error("Error generating AI response:", error);
 

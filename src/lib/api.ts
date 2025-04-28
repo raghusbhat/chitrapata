@@ -10,7 +10,7 @@ const API_BASE_URL = "http://localhost:3001/api";
  * @param prompt The user's prompt
  * @returns The AI response
  */
-export async function generateAIResponse(prompt: string): Promise<string> {
+export async function generateAIResponse(prompt: string): Promise<string | any[]> {
   try {
     const response = await fetch(`${API_BASE_URL}/ai/generate`, {
       method: "POST",
@@ -26,6 +26,7 @@ export async function generateAIResponse(prompt: string): Promise<string> {
     }
 
     const data = await response.json();
+    // data.response may be a string or array of shapes
     return data.response;
   } catch (error) {
     console.error("Error calling AI API:", error);

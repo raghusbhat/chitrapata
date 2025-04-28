@@ -163,6 +163,18 @@ function hexToRGBA(hex: string): [number, number, number, number] {
       }
     }
 
+    // Fallback: use Canvas2D to parse named CSS colors
+    try {
+      const canvas = document.createElement("canvas");
+      const ctx = canvas.getContext("2d");
+      if (ctx) {
+        ctx.fillStyle = hex;
+        const computed = ctx.fillStyle; // e.g. "#rrggbb" or "rgb(...)"
+        return hexToRGBA(computed);
+      }
+    } catch (e) {
+      console.error("Error parsing CSS color:", hex, e);
+    }
     return [0, 0, 0, 1]; // Default to black
   }
 
