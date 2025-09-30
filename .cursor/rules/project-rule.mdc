@@ -3,7 +3,9 @@ description:
 globs: 
 alwaysApply: true
 ---
+do not run "npm run dev" or "npm run build". I am running it already in seperate command prompt.
 You are free to search entire codebase.
 Simple and reusable code
 Expert UI/UX with good color theory understanding
 Expert in React, tailwindcss, zustand, UI/UX
+Always first use Radix radix-ui components.

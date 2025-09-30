@@ -40,6 +40,31 @@ export default {
           925: "#1c1c21",
           950: "#09090b",
         },
+        // Radix UI Colors
+        gray: {
+          1: "#fcfcfc",
+          2: "#f9f9f9",
+          3: "#f0f0f0",
+          4: "#e8e8e8",
+          5: "#e0e0e0",
+          6: "#d9d9d9",
+          7: "#cecece",
+          8: "#bbbbbb",
+          9: "#8d8d8d",
+          10: "#838383",
+          11: "#646464",
+          12: "#202020",
+        },
+        // Add more Radix colors as needed
+      },
+      // Add Radix UI data attribute variants
+      data: {
+        "state-open": "state=open",
+        "state-closed": "state=closed",
+        "state-checked": "state=checked",
+        "state-unchecked": "state=unchecked",
+        "state-on": "state=on",
+        "state-off": "state=off",
       },
     },
   },

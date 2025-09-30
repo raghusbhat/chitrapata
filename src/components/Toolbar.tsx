@@ -1,27 +1,17 @@
-import { useState, useEffect } from "react";
+import { useEffect, useCallback } from "react";
 import { useCanvasStore } from "../store/canvasStore";
 import { ShapeType } from "../lib/webgl/types";
 import {
   FiSquare,
   FiCircle,
   FiMinus,
-  FiLayers,
   FiMaximize,
   FiCopy,
   FiTrash2,
-  FiMove,
-  FiGrid,
   FiPackage,
   FiFolder,
-  FiBold,
 } from "react-icons/fi";
-
-interface ShortcutKey {
-  key: string;
-  description: string;
-  action: () => void;
-  condition?: boolean;
-}
+import { Button, Tooltip, Separator, Box, Flex } from "@radix-ui/themes";
 
 export function Toolbar() {
   const {
@@ -39,29 +29,35 @@ export function Toolbar() {
   const hasMultipleSelection = selectedShapeIds.length > 1;
 
   // Toggle drawing tool
-  const toggleDrawingTool = (tool: ShapeType) => {
-    setCurrentDrawingTool(currentDrawingTool === tool ? null : tool);
-  };
+  const toggleDrawingTool = useCallback(
+    (tool: ShapeType) => {
+      setCurrentDrawingTool(currentDrawingTool === tool ? null : tool);
+    },
+    [currentDrawingTool, setCurrentDrawingTool]
+  );
 
   // Check if a tool is active
-  const isToolActive = (tool: ShapeType) => currentDrawingTool === tool;
+  const isToolActive = useCallback(
+    (tool: ShapeType) => currentDrawingTool === tool,
+    [currentDrawingTool]
+  );
 
   // Create group from selected shapes
-  const handleCreateGroup = () => {
+  const handleCreateGroup = useCallback(() => {
     if (hasMultipleSelection) {
       createGroup();
     }
-  };
+  }, [hasMultipleSelection, createGroup]);
 
   // Ungroup the selected group
-  const handleUngroup = () => {
+  const handleUngroup = useCallback(() => {
     if (hasSelection && selectedShapeIds.length === 1) {
       ungroup(selectedShapeIds[0]);
     }
-  };
+  }, [hasSelection, selectedShapeIds, ungroup]);
 
   // Create frame from selected shapes or at default location
-  const handleCreateFrame = () => {
+  const handleCreateFrame = useCallback(() => {
     // Create a frame at default position
     const centerX = window.innerWidth / 2 - 150;
     const centerY = window.innerHeight / 2 - 100;
@@ -73,79 +69,21 @@ export function Toolbar() {
       height: 200,
       name: "New Frame",
     });
-  };
+  }, [createFrame]);
 
   // Delete selected shapes
-  const handleDelete = () => {
+  const handleDelete = useCallback(() => {
     if (hasSelection) {
       deleteSelectedShapes();
     }
-  };
+  }, [hasSelection, deleteSelectedShapes]);
 
   // Duplicate selected shapes
-  const handleDuplicate = () => {
+  const handleDuplicate = useCallback(() => {
     if (hasSelection) {
       duplicateSelectedShapes();
     }
-  };
-
-  // Define keyboard shortcuts
-  const shortcuts: ShortcutKey[] = [
-    {
-      key: "R",
-      description: "Rectangle",
-      action: () => toggleDrawingTool("rectangle"),
-      condition: true,
-    },
-    {
-      key: "E",
-      description: "Ellipse",
-      action: () => toggleDrawingTool("ellipse"),
-      condition: true,
-    },
-    {
-      key: "L",
-      description: "Line",
-      action: () => toggleDrawingTool("line"),
-      condition: true,
-    },
-    {
-      key: "F",
-      description: "Frame",
-      action: () => toggleDrawingTool("frame"),
-      condition: true,
-    },
-    {
-      key: "Shift+F",
-      description: "Create Frame",
-      action: handleCreateFrame,
-      condition: true,
-    },
-    {
-      key: "Ctrl+G",
-      description: "Group",
-      action: handleCreateGroup,
-      condition: hasMultipleSelection,
-    },
-    {
-      key: "Ctrl+Shift+G",
-      description: "Ungroup",
-      action: handleUngroup,
-      condition: hasSelection && selectedShapeIds.length === 1,
-    },
-    {
-      key: "Ctrl+D",
-      description: "Duplicate",
-      action: handleDuplicate,
-      condition: hasSelection,
-    },
-    {
-      key: "Delete",
-      description: "Delete",
-      action: handleDelete,
-      condition: hasSelection,
-    },
-  ];
+  }, [hasSelection, duplicateSelectedShapes]);
 
   // Set up keyboard shortcuts
   useEffect(() => {
@@ -210,125 +148,127 @@ export function Toolbar() {
     hasMultipleSelection,
     selectedShapeIds,
     currentDrawingTool,
+    toggleDrawingTool,
+    handleCreateGroup,
+    handleUngroup,
+    handleDelete,
+    handleDuplicate,
+    handleCreateFrame,
   ]);
 
-  // Function to create a shortcut label
-  const ShortcutLabel = ({ shortcut }: { shortcut: string }) => (
-    <span className="ml-2 text-xs text-zinc-500 font-mono">{shortcut}</span>
-  );
-
   return (
-    <div className="absolute top-4 left-1/2 transform -translate-x-1/2 flex space-x-2 bg-zinc-950 p-1.5 rounded-lg shadow-xl z-10">
-      {/* Drawing tools */}
-      <div className="flex space-x-1 border-r border-zinc-700 pr-2">
-        <button
-          className={`p-1.5 rounded ${
-            isToolActive("rectangle") ? "bg-indigo-700" : "hover:bg-zinc-800"
-          }`}
-          onClick={() => toggleDrawingTool("rectangle")}
-          title="Rectangle (R)"
-        >
-          <FiSquare className="w-4 h-4 text-zinc-300" />
-          <span className="sr-only">Rectangle</span>
-        </button>
-        <button
-          className={`p-1.5 rounded ${
-            isToolActive("ellipse") ? "bg-indigo-700" : "hover:bg-zinc-800"
-          }`}
-          onClick={() => toggleDrawingTool("ellipse")}
-          title="Ellipse (E)"
-        >
-          <FiCircle className="w-4 h-4 text-zinc-300" />
-          <span className="sr-only">Ellipse</span>
-        </button>
-        <button
-          className={`p-1.5 rounded ${
-            isToolActive("line") ? "bg-indigo-700" : "hover:bg-zinc-800"
-          }`}
-          onClick={() => toggleDrawingTool("line")}
-          title="Line (L)"
-        >
-          <FiMinus className="w-4 h-4 text-zinc-300" />
-          <span className="sr-only">Line</span>
-        </button>
-      </div>
+    <Box className="fixed top-16 left-1/2 -translate-x-1/2 z-50">
+      <Box className="bg-zinc-950/90 backdrop-blur-sm border border-zinc-800/50 rounded-lg shadow-2xl transform-none">
+        <Flex gap="4" p="4">
+          {/* Drawing tools */}
+          <Flex gap="4">
+            <Tooltip content="Rectangle (R)">
+              <Button
+                variant={isToolActive("rectangle") ? "solid" : "ghost"}
+                color={isToolActive("rectangle") ? "violet" : "gray"}
+                onClick={() => toggleDrawingTool("rectangle")}
+                size="2"
+                className="transition-colors transform-none"
+              >
+                <FiSquare size={18} />
+              </Button>
+            </Tooltip>
 
-      {/* Container tools */}
-      <div className="flex space-x-1 border-r border-zinc-700 pr-2">
-        <button
-          className={`p-1.5 rounded ${
-            isToolActive("frame") ? "bg-indigo-700" : "hover:bg-zinc-800"
-          }`}
-          onClick={() => toggleDrawingTool("frame")}
-          title="Draw Frame (F)"
-        >
-          <FiMaximize className="w-4 h-4 text-zinc-300" />
-          <span className="sr-only">Draw Frame</span>
-        </button>
-        <button
-          className={`p-1.5 rounded ${
-            hasSelection ? "hover:bg-zinc-800" : "opacity-50 cursor-not-allowed"
-          }`}
-          onClick={handleCreateFrame}
-          disabled={!hasSelection}
-          title="Create Frame from Selection (Shift+F)"
-        >
-          <FiPackage className="w-4 h-4 text-zinc-300" />
-          <span className="sr-only">Create Frame</span>
-        </button>
-        <button
-          className={`p-1.5 rounded ${
-            hasMultipleSelection
-              ? "hover:bg-zinc-800"
-              : "opacity-50 cursor-not-allowed"
-          }`}
-          onClick={handleCreateGroup}
-          disabled={!hasMultipleSelection}
-          title="Group (Ctrl+G)"
-        >
-          <FiLayers className="w-4 h-4 text-zinc-300" />
-          <span className="sr-only">Group</span>
-        </button>
-        <button
-          className={`p-1.5 rounded ${
-            hasSelection && selectedShapeIds.length === 1
-              ? "hover:bg-zinc-800"
-              : "opacity-50 cursor-not-allowed"
-          }`}
-          onClick={handleUngroup}
-          disabled={!hasSelection || selectedShapeIds.length !== 1}
-          title="Ungroup (Ctrl+Shift+G)"
-        >
-          <FiFolder className="w-4 h-4 text-zinc-300" />
-          <span className="sr-only">Ungroup</span>
-        </button>
-      </div>
+            <Tooltip content="Ellipse (E)">
+              <Button
+                variant={isToolActive("ellipse") ? "solid" : "ghost"}
+                color={isToolActive("ellipse") ? "violet" : "gray"}
+                onClick={() => toggleDrawingTool("ellipse")}
+                size="2"
+                className="transition-colors transform-none"
+              >
+                <FiCircle size={18} />
+              </Button>
+            </Tooltip>
 
-      {/* Edit tools */}
-      <div className="flex space-x-1">
-        <button
-          className={`p-1.5 rounded ${
-            hasSelection ? "hover:bg-zinc-800" : "opacity-50 cursor-not-allowed"
-          }`}
-          onClick={handleDuplicate}
-          disabled={!hasSelection}
-          title="Duplicate (Ctrl+D)"
-        >
-          <FiCopy className="w-4 h-4 text-zinc-300" />
-          <span className="sr-only">Duplicate</span>
-        </button>
-        <button
-          className={`p-1.5 rounded ${
-            hasSelection ? "hover:bg-zinc-800" : "opacity-50 cursor-not-allowed"
-          }`}
-          onClick={handleDelete}
-          disabled={!hasSelection}
-          title="Delete (Delete)"
-        >
-          <FiTrash2 className="w-4 h-4 text-zinc-300" />
-          <span className="sr-only">Delete</span>
-        </button>
-      </div>
-    </div>
+            <Tooltip content="Line (L)">
+              <Button
+                variant={isToolActive("line") ? "solid" : "ghost"}
+                color={isToolActive("line") ? "violet" : "gray"}
+                onClick={() => toggleDrawingTool("line")}
+                size="2"
+                className="transition-colors transform-none"
+              >
+                <FiMinus size={18} />
+              </Button>
+            </Tooltip>
+
+            <Tooltip content="Frame (F)">
+              <Button
+                variant={isToolActive("frame") ? "solid" : "ghost"}
+                color={isToolActive("frame") ? "violet" : "gray"}
+                onClick={() => toggleDrawingTool("frame")}
+                size="2"
+                className="transition-colors transform-none"
+              >
+                <FiMaximize size={18} />
+              </Button>
+            </Tooltip>
+          </Flex>
+
+          <Separator orientation="vertical" size="4" />
+
+          {/* Selection tools */}
+          <Flex gap="4">
+            <Tooltip content="Group (Ctrl+G)">
+              <Button
+                variant="ghost"
+                color="gray"
+                onClick={handleCreateGroup}
+                disabled={!hasMultipleSelection}
+                size="2"
+                className="transition-colors transform-none"
+              >
+                <FiPackage size={18} />
+              </Button>
+            </Tooltip>
+
+            <Tooltip content="Ungroup (Ctrl+Shift+G)">
+              <Button
+                variant="ghost"
+                color="gray"
+                onClick={handleUngroup}
+                disabled={!hasSelection || selectedShapeIds.length !== 1}
+                size="2"
+                className="transition-colors transform-none"
+              >
+                <FiFolder size={18} />
+              </Button>
+            </Tooltip>
+
+            <Tooltip content="Duplicate (Ctrl+D)">
+              <Button
+                variant="ghost"
+                color="gray"
+                onClick={handleDuplicate}
+                disabled={!hasSelection}
+                size="2"
+                className="transition-colors transform-none"
+              >
+                <FiCopy size={18} />
+              </Button>
+            </Tooltip>
+
+            <Tooltip content="Delete (Delete)">
+              <Button
+                variant="ghost"
+                color="gray"
+                onClick={handleDelete}
+                disabled={!hasSelection}
+                size="2"
+                className="transition-colors transform-none"
+              >
+                <FiTrash2 size={18} />
+              </Button>
+            </Tooltip>
+          </Flex>
+        </Flex>
+      </Box>
+    </Box>
   );
 }

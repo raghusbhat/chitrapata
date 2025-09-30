@@ -10,6 +10,7 @@ export interface WebGLContext {
     texCoord: number;
   };
   uniforms: Record<string, WebGLUniformLocation>;
+  currentScale?: number; // Current canvas zoom level
 }
 
 export type ShapeType = "rectangle" | "ellipse" | "line" | "frame" | "group";
@@ -47,33 +48,34 @@ export interface Shape {
   y: number;
   width: number;
   height: number;
-  fill: string;
-  stroke: string;
-  strokeWidth: number;
-  rotation: number;
-  zIndex: number;
-  isVisible: boolean;
-  isLocked: boolean;
+  rotation?: number;
+  fill?: string;
+  stroke?: string;
+  strokeWidth?: number;
+  isVisible?: boolean;
+  isLocked?: boolean;
+  isContainer?: boolean;
+  clipContent?: boolean;
   name?: string;
-
-  // Hierarchy properties
-  parentId?: string; // ID of parent container (frame or group)
-  childIds: string[]; // IDs of child shapes
-  isContainer: boolean; // Whether this shape can contain other shapes
-
-  // Frame-specific properties
-  clipContent?: boolean; // Whether to clip content that overflows the frame's boundaries
-  constraints?: Constraints; // Used by frames to define child positioning behavior
-
-  // Group-specific properties
-  autoResize?: boolean; // Whether the group auto-adjusts its size based on children
-
-  // Render properties
+  zIndex?: number;
+  autoResize?: boolean;
+  parentId?: string;
+  childIds?: string[];
   absoluteTransform?: {
     x: number;
     y: number;
     rotation: number;
-    scale: number;
+  };
+  scaleStrokeWidth?: boolean; // Controls whether stroke width scales with resize
+  borderRadius?: number; // Rounded corners for rectangles
+  shadow?: {
+    enabled: boolean;
+    offsetX: number;
+    offsetY: number;
+    blur: number;
+    spread: number;
+    color: string;
+    opacity: number;
   };
 }
 
@@ -106,4 +108,14 @@ export interface SelectionState {
     width: number;
     height: number;
   } | null;
+}
+
+export interface Shadow {
+  enabled: boolean;
+  offsetX: number;
+  offsetY: number;
+  blur: number;
+  spread: number;
+  color: string;
+  opacity: number;
 }

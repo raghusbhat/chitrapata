@@ -5,18 +5,15 @@ import {
   FiEyeOff,
   FiLock,
   FiUnlock,
-  FiMoreVertical,
   FiEdit2,
-  FiCheck,
-  FiX,
   FiChevronRight,
   FiChevronDown,
-  FiFolder,
   FiSquare,
   FiCircle,
   FiMinus,
   FiMaximize,
   FiLayers,
+  FiSearch,
 } from "react-icons/fi";
 import {
   DndContext,
@@ -36,8 +33,17 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Shape, ShapeType } from "../lib/webgl/types";
-import { ShapePreview } from "./ShapePreview";
+import { Shape } from "../lib/webgl/types";
+import {
+  Button,
+  Tooltip,
+  TextField,
+  ContextMenu,
+  Box,
+  Flex,
+  Text,
+  ScrollArea,
+} from "@radix-ui/themes";
 
 // Hierarchical tree node representation
 interface TreeNode {
@@ -61,24 +67,6 @@ interface SortableLayerItemProps {
   isDropTarget: boolean;
 }
 
-// Icon mapper for different shape types
-const ShapeIcon = ({ type }: { type: ShapeType }) => {
-  switch (type) {
-    case "rectangle":
-      return <FiSquare className="w-3.5 h-3.5" />;
-    case "ellipse":
-      return <FiCircle className="w-3.5 h-3.5" />;
-    case "line":
-      return <FiMinus className="w-3.5 h-3.5" />;
-    case "frame":
-      return <FiMaximize className="w-3.5 h-3.5" />;
-    case "group":
-      return <FiLayers className="w-3.5 h-3.5" />;
-    default:
-      return <FiSquare className="w-3.5 h-3.5" />;
-  }
-};
-
 // Sortable layer item component
 function SortableLayerItem({
   node,
@@ -91,22 +79,13 @@ function SortableLayerItem({
   expandedIds,
   isDropTarget,
 }: SortableLayerItemProps) {
-  const { shape, level, children } = node;
-  const [isHovered, setIsHovered] = useState(false);
+  const { shape, level } = node;
   const [isRenaming, setIsRenaming] = useState(false);
   const [nameInput, setNameInput] = useState(shape.name || "");
   const inputRef = useRef<HTMLInputElement>(null);
   const isExpanded = expandedIds.has(shape.id);
-  const hasChildren = children.length > 0;
 
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({
+  const { setNodeRef, transform, transition, isDragging } = useSortable({
     id: shape.id,
     disabled: isRenaming,
   });
@@ -152,13 +131,6 @@ function SortableLayerItem({
   const handleToggleExpand = (e: React.MouseEvent) => {
     e.stopPropagation();
     onToggleExpand(shape.id);
-  };
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-    zIndex: isDragging ? 999 : "auto",
   };
 
   // Determine if this is a container (frame or group)
@@ -216,178 +188,158 @@ function SortableLayerItem({
   const typeIndicator = getTypeIndicator();
 
   return (
-    <>
-      <li
-        ref={setNodeRef}
-        style={style}
-        className={`px-3 py-1.5 flex items-center text-xs cursor-pointer hover:bg-zinc-800 ${
-          selectedShapeId === shape.id ? "bg-zinc-800" : ""
-        } ${getTypeSpecificStyles()} ${
-          isDropTarget ? "border-2 border-indigo-500" : ""
-        }`}
-        onClick={() => onSelect(shape.id)}
-        onMouseEnter={() => setIsHovered(true)}
-        onMouseLeave={() => setIsHovered(false)}
-      >
-        <div
-          className="flex-1 flex items-center gap-1 truncate relative"
-          style={{ paddingLeft: `${level * 16}px` }}
+    <ContextMenu.Root>
+      <ContextMenu.Trigger>
+        <Box
+          ref={setNodeRef}
+          style={{
+            transform: CSS.Transform.toString(transform),
+            transition,
+            opacity: isDragging ? 0.5 : 1,
+            zIndex: isDragging ? 999 : "auto",
+          }}
+          className={`px-3 py-1.5 flex items-center text-xs cursor-pointer hover:bg-zinc-800 ${
+            selectedShapeId === shape.id ? "bg-zinc-800" : ""
+          } ${getTypeSpecificStyles()} ${
+            isDropTarget ? "border-2 border-indigo-500" : ""
+          }`}
+          onClick={() => onSelect(shape.id)}
         >
-          {/* Vertical connection lines for parent-child relationships */}
-          {level > 0 && (
-            <div
-              className="absolute border-l border-zinc-700 h-full"
-              style={{ left: `${level * 16 - 12}px`, top: 0 }}
-            />
-          )}
-
-          {/* Expand/collapse button for containers */}
-          {isContainer && (
-            <button
-              className="w-4 h-4 flex items-center justify-center text-zinc-400 z-10"
-              onClick={handleToggleExpand}
-            >
-              {isExpanded ? (
-                <FiChevronDown className="w-3 h-3" />
-              ) : (
-                <FiChevronRight className="w-3 h-3" />
-              )}
-            </button>
-          )}
-
-          {/* Spacer for items without collapse button */}
-          {!isContainer && <div className="w-4" />}
-
-          {/* Drag handle */}
-          <div
-            className="cursor-grab text-zinc-500"
-            {...attributes}
-            {...listeners}
+          <Flex
+            className="flex-1 flex items-center gap-1 truncate relative"
+            style={{ paddingLeft: `${level * 16}px` }}
           >
-            <FiMoreVertical className="w-3.5 h-3.5" />
-          </div>
-
-          {/* Shape type indicator */}
-          <div
-            className={`w-4 h-4 flex items-center justify-center rounded-sm ${typeIndicator.bg} text-white`}
-          >
-            {typeIndicator.icon}
-          </div>
-
-          {/* Shape thumbnail color */}
-          {shape.fill &&
-            shape.fill !== "transparent" &&
-            shape.type !== "frame" &&
-            shape.type !== "group" && (
-              <div
-                className="w-2.5 h-2.5 rounded-sm"
-                style={{
-                  backgroundColor: shape.fill,
-                  opacity: shape.isVisible === false ? 0.4 : 1,
-                }}
+            {/* Vertical connection lines for parent-child relationships */}
+            {level > 0 && (
+              <Box
+                className="absolute border-l border-zinc-700 h-full"
+                style={{ left: `${level * 16 - 12}px`, top: 0 }}
               />
             )}
 
-          {isRenaming ? (
-            <div className="flex items-center gap-1 flex-1">
-              <input
-                ref={inputRef}
-                type="text"
+            {/* Expand/collapse button for containers */}
+            {isContainer && (
+              <Button
+                variant="ghost"
+                size="1"
+                className="w-4 h-4 flex items-center justify-center text-zinc-400 z-10"
+                onClick={handleToggleExpand}
+              >
+                {isExpanded ? (
+                  <FiChevronDown className="w-3 h-3" />
+                ) : (
+                  <FiChevronRight className="w-3 h-3" />
+                )}
+              </Button>
+            )}
+
+            {/* Type indicator */}
+            <Box
+              className={`w-4 h-4 rounded flex items-center justify-center ${typeIndicator.bg}`}
+            >
+              {typeIndicator.icon}
+            </Box>
+
+            {/* Name or rename input */}
+            {isRenaming ? (
+              <TextField.Root
+                size="1"
                 value={nameInput}
                 onChange={(e) => setNameInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                className="bg-zinc-700 text-white text-xs rounded px-1.5 py-0.5 flex-1 min-w-0 focus:outline-none"
-                onClick={(e) => e.stopPropagation()}
+                onBlur={handleSaveRename}
+                ref={inputRef}
               />
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleSaveRename();
-                }}
-                className="p-0.5 text-green-400 hover:text-green-300"
-              >
-                <FiCheck className="w-3 h-3" />
-              </button>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleCancelRename();
-                }}
-                className="p-0.5 text-red-400 hover:text-red-300"
-              >
-                <FiX className="w-3 h-3" />
-              </button>
-            </div>
-          ) : (
-            <div className="flex items-center gap-1 truncate flex-1">
-              <span className="truncate">
-                {shape.name ||
-                  `${shape.type.charAt(0).toUpperCase() + shape.type.slice(1)}`}
-              </span>
-              {isHovered && (
-                <button
-                  onClick={handleStartRenaming}
-                  className="opacity-50 hover:opacity-100 text-zinc-400 hover:text-zinc-200"
+            ) : (
+              <Text className="truncate">{shape.name || shape.type}</Text>
+            )}
+
+            {/* Controls */}
+            <Flex gap="1" className="ml-auto">
+              <Tooltip content={shape.isVisible ? "Hide" : "Show"}>
+                <Button
+                  variant="ghost"
+                  size="1"
+                  className="text-zinc-400 hover:text-white"
+                  onClick={(e: React.MouseEvent) => {
+                    e.stopPropagation();
+                    onToggleVisibility(shape.id, !shape.isVisible);
+                  }}
                 >
-                  <FiEdit2 className="w-3 h-3" />
-                </button>
-              )}
-            </div>
+                  {shape.isVisible ? (
+                    <FiEye className="w-3 h-3" />
+                  ) : (
+                    <FiEyeOff className="w-3 h-3" />
+                  )}
+                </Button>
+              </Tooltip>
+
+              <Tooltip content={shape.isLocked ? "Unlock" : "Lock"}>
+                <Button
+                  variant="ghost"
+                  size="1"
+                  className="text-zinc-400 hover:text-white"
+                  onClick={(e: React.MouseEvent) => {
+                    e.stopPropagation();
+                    onToggleLock(shape.id, !shape.isLocked);
+                  }}
+                >
+                  {shape.isLocked ? (
+                    <FiLock className="w-3 h-3" />
+                  ) : (
+                    <FiUnlock className="w-3 h-3" />
+                  )}
+                </Button>
+              </Tooltip>
+            </Flex>
+          </Flex>
+        </Box>
+      </ContextMenu.Trigger>
+
+      <ContextMenu.Content>
+        <ContextMenu.Item onClick={handleStartRenaming}>
+          <FiEdit2 className="w-3 h-3 mr-2" />
+          Rename
+        </ContextMenu.Item>
+        <ContextMenu.Separator />
+        <ContextMenu.Item
+          onClick={(e: React.MouseEvent) => {
+            e.stopPropagation();
+            onToggleVisibility(shape.id, !shape.isVisible);
+          }}
+        >
+          {shape.isVisible ? (
+            <>
+              <FiEyeOff className="w-3 h-3 mr-2" />
+              Hide
+            </>
+          ) : (
+            <>
+              <FiEye className="w-3 h-3 mr-2" />
+              Show
+            </>
           )}
-        </div>
-
-        {isHovered && !isRenaming && (
-          <div className="flex gap-1.5">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onToggleVisibility(shape.id, shape.isVisible !== false);
-              }}
-              className="text-zinc-400 hover:text-zinc-200"
-            >
-              {shape.isVisible === false ? (
-                <FiEyeOff className="w-3.5 h-3.5" />
-              ) : (
-                <FiEye className="w-3.5 h-3.5" />
-              )}
-            </button>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onToggleLock(shape.id, shape.isLocked === true);
-              }}
-              className="text-zinc-400 hover:text-zinc-200"
-            >
-              {shape.isLocked === true ? (
-                <FiLock className="w-3.5 h-3.5" />
-              ) : (
-                <FiUnlock className="w-3.5 h-3.5" />
-              )}
-            </button>
-          </div>
-        )}
-      </li>
-
-      {/* Render children if expanded */}
-      {isExpanded && children.length > 0 && (
-        <ul className="relative">
-          {children.map((childNode) => (
-            <SortableLayerItem
-              key={childNode.id}
-              node={childNode}
-              selectedShapeId={selectedShapeId}
-              onSelect={onSelect}
-              onToggleVisibility={onToggleVisibility}
-              onToggleLock={onToggleLock}
-              onRename={onRename}
-              onToggleExpand={onToggleExpand}
-              expandedIds={expandedIds}
-              isDropTarget={isDropTarget}
-            />
-          ))}
-        </ul>
-      )}
-    </>
+        </ContextMenu.Item>
+        <ContextMenu.Item
+          onClick={(e: React.MouseEvent) => {
+            e.stopPropagation();
+            onToggleLock(shape.id, !shape.isLocked);
+          }}
+        >
+          {shape.isLocked ? (
+            <>
+              <FiUnlock className="w-3 h-3 mr-2" />
+              Unlock
+            </>
+          ) : (
+            <>
+              <FiLock className="w-3 h-3 mr-2" />
+              Lock
+            </>
+          )}
+        </ContextMenu.Item>
+      </ContextMenu.Content>
+    </ContextMenu.Root>
   );
 }
 
@@ -399,7 +351,6 @@ export function LeftSidebar() {
     updateShape,
     reorderShapes,
     getPathToRoot,
-    moveShapeToParent,
     invalidateCache,
   } = useCanvasStore();
 
@@ -775,21 +726,25 @@ export function LeftSidebar() {
   const sortableIds = flattenTree(filteredTree);
 
   return (
-    <div className="h-full w-full bg-zinc-900 border-r border-zinc-800 flex flex-col">
-      <div className="p-3 border-b border-zinc-800">
-        <h2 className="text-sm font-medium text-zinc-300 mb-2">Layers</h2>
-        <div className="relative">
-          <input
-            type="text"
+    <Box className="h-full w-full bg-zinc-900 border-r border-zinc-800 flex flex-col">
+      <Box className="p-3 border-b border-zinc-800">
+        <Text className="text-sm font-medium text-zinc-300 mb-2">Layers</Text>
+        <Box className="relative">
+          <TextField.Root
             placeholder="Search layers..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full bg-zinc-800 text-zinc-300 text-xs rounded px-3 py-1.5 focus:ring-1 focus:ring-indigo-500 focus:outline-none"
-          />
-        </div>
-      </div>
+            className="bg-zinc-800/50 text-zinc-300 text-xs rounded-md focus:ring-1 focus:ring-indigo-500 focus:outline-none border-zinc-700/50"
+            size="2"
+          >
+            <TextField.Slot>
+              <FiSearch className="h-4 w-4 text-zinc-500" />
+            </TextField.Slot>
+          </TextField.Root>
+        </Box>
+      </Box>
 
-      <div className="flex-1 overflow-y-auto">
+      <ScrollArea className="flex-1 overflow-y-auto">
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}
@@ -800,7 +755,7 @@ export function LeftSidebar() {
             items={sortableIds}
             strategy={verticalListSortingStrategy}
           >
-            <ul className="py-1">
+            <Box className="py-1">
               {filteredTree.map((node) => (
                 <SortableLayerItem
                   key={node.id}
@@ -815,17 +770,19 @@ export function LeftSidebar() {
                   isDropTarget={activeDropTarget === node.id}
                 />
               ))}
-            </ul>
+            </Box>
           </SortableContext>
         </DndContext>
         {filteredTree.length === 0 && (
-          <div className="flex items-center justify-center h-20 text-zinc-500 text-xs">
-            {searchTerm
-              ? "No layers match your search"
-              : "No layers created yet"}
-          </div>
+          <Flex align="center" justify="center" className="h-20">
+            <Text className="text-zinc-500 text-xs">
+              {searchTerm
+                ? "No layers match your search"
+                : "No layers created yet"}
+            </Text>
+          </Flex>
         )}
-      </div>
-    </div>
+      </ScrollArea>
+    </Box>
   );
 }

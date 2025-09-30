@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { useCanvasStore } from "../store/canvasStore";
 import { ResizeHandle } from "../lib/webgl/types";
 
@@ -53,6 +53,9 @@ const RotationZone: React.FC<HandleProps> = ({
         document.removeEventListener("mouseup", handleMouseUp);
         document.body.style.cursor = "";
       };
+    } else {
+      // Reset cursor when not rotating
+      document.body.style.cursor = "";
     }
   }, [isRotating, cursor]);
 
@@ -156,7 +159,7 @@ export function SelectionControls() {
   // Subscribe selected shape to react to rotation/resizing updates
   const shape = useCanvasStore((state) => state.getSelectedShape());
 
-  const handleMouseDown = (handle: ResizeHandle, e: React.MouseEvent) => {
+  const handleMouseDown = useCallback((handle: ResizeHandle, e: React.MouseEvent) => {
     if (!selectedShapeId || !shape) return;
     e.stopPropagation();
     startResizing(
@@ -165,20 +168,18 @@ export function SelectionControls() {
       { x: e.clientX, y: e.clientY },
       { x: shape.x, y: shape.y, width: shape.width, height: shape.height }
     );
-  };
+  }, [selectedShapeId, shape, startResizing]);
 
-  const handleMouseMove = (e: MouseEvent) => {
+  const handleMouseMove = useCallback((e: MouseEvent) => {
     resizeSelectedShape(
       { x: e.clientX, y: e.clientY },
       e.shiftKey // Pass shiftKey to maintain aspect ratio
     );
-  };
+  }, [resizeSelectedShape]);
 
-  const handleMouseUp = () => {
+  const handleMouseUp = useCallback(() => {
     endResizing();
-    document.removeEventListener("mousemove", handleMouseMove);
-    document.removeEventListener("mouseup", handleMouseUp);
-  };
+  }, [endResizing]);
 
   useEffect(() => {
     if (selectionState.activeHandle) {
@@ -190,7 +191,7 @@ export function SelectionControls() {
         document.removeEventListener("mouseup", handleMouseUp);
       };
     }
-  }, [selectionState.activeHandle]);
+  }, [selectionState.activeHandle, handleMouseMove, handleMouseUp]);
 
   if (!shape || !selectedShapeId) return null;
 
@@ -220,12 +221,12 @@ export function SelectionControls() {
         transformOrigin: "center center",
       }}
     >
-      {/* Selection outline */}
+      {/* Figma-style selection outline */}
       <div
         className="absolute inset-0 pointer-events-none"
         style={{
-          border: "1px solid rgb(var(--primary-color))",
-          boxShadow: "0 0 0 1px rgba(var(--primary-color), 0.5)",
+          border: "1.5px solid #1E90FF",
+          borderRadius: "1px",
         }}
       />
 

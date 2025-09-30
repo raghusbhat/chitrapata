@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//mnt/c/RAGHU/softwares/ShareX-17.1.0-portable/ShareX/Screenshots/2025-09/**)",
+      "WebSearch",
+      "WebFetch(domain:help.figma.com)",
+      "Bash(npm run dev:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

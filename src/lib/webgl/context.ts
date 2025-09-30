@@ -95,8 +95,6 @@ const fragmentShaderSource = `#version 300 es
  * Creates and initializes WebGL context with shaders
  */
 export function createWebGLContext(canvas: HTMLCanvasElement): WebGLContext {
-  console.log("Creating WebGL context for canvas:", canvas);
-
   // Create WebGL2 context with alpha disabled to prevent blending issues with white colors
   const gl = canvas.getContext("webgl2", {
     alpha: false, // Disabling alpha channel in the context
@@ -120,8 +118,6 @@ export function createWebGLContext(canvas: HTMLCanvasElement): WebGLContext {
     position: gl.getAttribLocation(program, "a_position"),
     texCoord: gl.getAttribLocation(program, "a_texCoord"),
   };
-
-  console.log("Attribute locations:", attributes);
 
   // Use program before getting uniform locations
   gl.useProgram(program);
@@ -159,7 +155,6 @@ export function createWebGLContext(canvas: HTMLCanvasElement): WebGLContext {
  * Creates and compiles shader program
  */
 function createProgram(gl: WebGL2RenderingContext): WebGLProgram | null {
-  console.log("Creating shader program");
   const vertexShader = compileShader(gl, gl.VERTEX_SHADER, vertexShaderSource);
   const fragmentShader = compileShader(
     gl,
@@ -188,7 +183,6 @@ function createProgram(gl: WebGL2RenderingContext): WebGLProgram | null {
     return null;
   }
 
-  console.log("Shader program created successfully");
   return program;
 }
 
@@ -200,9 +194,6 @@ function compileShader(
   type: number,
   source: string
 ): WebGLShader | null {
-  console.log(
-    `Compiling ${type === gl.VERTEX_SHADER ? "vertex" : "fragment"} shader`
-  );
   const shader = gl.createShader(type);
   if (!shader) {
     return null;
@@ -212,10 +203,12 @@ function compileShader(
   gl.compileShader(shader);
 
   if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-    console.error("Shader compilation error:", gl.getShaderInfoLog(shader));
+    const errorLog = gl.getShaderInfoLog(shader);
+    const shaderType = type === gl.VERTEX_SHADER ? "vertex" : "fragment";
+    console.error(`${shaderType} shader compilation error:`, errorLog || "Unknown error");
+    gl.deleteShader(shader);
     return null;
   }
 
-  console.log("Shader compiled successfully");
   return shader;
 }

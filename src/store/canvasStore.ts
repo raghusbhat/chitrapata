@@ -308,16 +308,13 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       processShape(rootShape);
     }
 
-    // Use setTimeout to defer state update to prevent setState during render issues
-    setTimeout(() => {
-      set((state) => ({
-        cache: {
-          ...state.cache,
-          flattenedShapes: result,
-          needsUpdate: false,
-        },
-      }));
-    }, 0);
+    // Update cache immediately (no setTimeout - prevents memory leaks)
+    set((state) => ({
+      cache: {
+        flattenedShapes: result,
+        needsUpdate: false,
+      },
+    }));
 
     return result;
   },
@@ -359,6 +356,16 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     // from getDefaultPropertiesForShape in Canvas.tsx.
     // We just need to ensure required fields have fallbacks.
 
+    const defaultShadow = {
+      enabled: false,
+      offsetX: 0,
+      offsetY: 4,
+      blur: 8,
+      spread: 0,
+      color: "#000000",
+      opacity: 0.2,
+    };
+
     const newShape: Shape = {
       id,
       name:
@@ -384,6 +391,36 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       // Ensure other potential properties from Partial<Shape> have defaults
       clipContent: shape.clipContent || shape.type === "frame",
       autoResize: shape.autoResize || shape.type === "group",
+      // Ensure shadow properties are fully defined
+      shadow: shape.shadow
+        ? {
+            enabled:
+              shape.shadow.enabled !== undefined
+                ? shape.shadow.enabled
+                : defaultShadow.enabled,
+            offsetX:
+              shape.shadow.offsetX !== undefined
+                ? shape.shadow.offsetX
+                : defaultShadow.offsetX,
+            offsetY:
+              shape.shadow.offsetY !== undefined
+                ? shape.shadow.offsetY
+                : defaultShadow.offsetY,
+            blur:
+              shape.shadow.blur !== undefined
+                ? shape.shadow.blur
+                : defaultShadow.blur,
+            spread:
+              shape.shadow.spread !== undefined
+                ? shape.shadow.spread
+                : defaultShadow.spread,
+            color: shape.shadow.color || defaultShadow.color,
+            opacity:
+              shape.shadow.opacity !== undefined
+                ? shape.shadow.opacity
+                : defaultShadow.opacity,
+          }
+        : defaultShadow,
     };
 
     set((state) => {
@@ -496,7 +533,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
               ? updatedProps.rotation - (currentShape.rotation || 0)
               : 0;
 
-          // Helper function to recursively transform children
+          // Helper function to recursively transform children (Figma-style)
           const transformChildren = (
             childIds: string[],
             parentDeltaX: number,
@@ -513,17 +550,25 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
 
               const child = updatedShapes[childIndex];
 
-              // Apply transformations
-              // For translation, simply add delta
-              let newX = child.x + parentDeltaX;
-              let newY = child.y + parentDeltaY;
+              let newX = child.x;
+              let newY = child.y;
+              let newWidth = child.width;
+              let newHeight = child.height;
 
-              // Apply scaling
+              // Apply scaling first (Figma-style: scale position AND size relative to parent's top-left)
               if (parentScaleX !== 1 || parentScaleY !== 1) {
-                // Scale relative to parent's origin
+                // Scale position relative to parent's origin (0,0)
                 newX = child.x * parentScaleX;
                 newY = child.y * parentScaleY;
+
+                // Scale the child's dimensions (Figma scales children when frame scales)
+                newWidth = child.width * parentScaleX;
+                newHeight = child.height * parentScaleY;
               }
+
+              // Then apply translation (moving the frame moves children)
+              newX += parentDeltaX;
+              newY += parentDeltaY;
 
               // Apply rotation if needed
               let newRotation = child.rotation || 0;
@@ -531,11 +576,13 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
                 newRotation = (child.rotation || 0) + parentDeltaRotation;
               }
 
-              // Update the child
+              // Update the child with all transformations
               updatedShapes[childIndex] = {
                 ...child,
                 x: newX,
                 y: newY,
+                width: newWidth,
+                height: newHeight,
                 rotation: newRotation,
               };
 
@@ -1025,8 +1072,10 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         newWidth = endX - newX;
         newHeight = endY - newY;
       } else if (activeHandle === "bottom-right") {
-        newWidth = initialShapeBounds.width + currentMousePos.x - initialMousePos.x;
-        newHeight = initialShapeBounds.height + currentMousePos.y - initialMousePos.y;
+        newWidth =
+          initialShapeBounds.width + currentMousePos.x - initialMousePos.x;
+        newHeight =
+          initialShapeBounds.height + currentMousePos.y - initialMousePos.y;
       }
       set((state) => ({
         shapes: state.shapes.map((s) =>
@@ -1237,3 +1286,15 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     });
   },
 }));
+
+// Update shape properties
+const updateShapeProperties = (
+  state: CanvasState,
+  id: string,
+  updates: Partial<Shape>
+) => {
+  const updatedShapes = state.shapes.map((shape) =>
+    shape.id === id ? { ...shape, ...updates } : shape
+  );
+  return { ...state, shapes: updatedShapes };
+};

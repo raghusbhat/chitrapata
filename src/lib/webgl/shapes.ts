@@ -225,6 +225,7 @@ export function renderShape(
     strokeWidth = 1,
     rotation = 0,
     type = "rectangle",
+    scaleStrokeWidth = false,
   } = shape;
 
   // Log shape rendering details
@@ -279,8 +280,18 @@ export function renderShape(
   const fillRGBA = hexToRGBA(fill);
   const strokeRGBA = hexToRGBA(stroke);
 
-  console.log(`[WebGL] Fill color for shape id ${shape.id}:`, fill, '->', fillRGBA);
-  console.log(`[WebGL] Stroke color for shape id ${shape.id}:`, stroke, '->', strokeRGBA);
+  console.log(
+    `[WebGL] Fill color for shape id ${shape.id}:`,
+    fill,
+    "->",
+    fillRGBA
+  );
+  console.log(
+    `[WebGL] Stroke color for shape id ${shape.id}:`,
+    stroke,
+    "->",
+    strokeRGBA
+  );
 
   gl.uniform4f(
     uniforms.fillColor,
@@ -298,9 +309,14 @@ export function renderShape(
     strokeRGBA[3]
   );
 
+  // Use a uniform stroke width regardless of scale if scaleStrokeWidth is false
+  const effectiveStrokeWidth = scaleStrokeWidth
+    ? strokeWidth
+    : strokeWidth / context.currentScale;
+
   // Scale stroke width by device pixel ratio
   const normalizedStrokeWidth =
-    (strokeWidth * dpr) / Math.min(scaledWidth, scaledHeight);
+    (effectiveStrokeWidth * dpr) / Math.min(scaledWidth, scaledHeight);
   gl.uniform1f(uniforms.strokeWidth, normalizedStrokeWidth);
   // Reset smoothing based on shape dimensions
   gl.uniform1f(uniforms.smoothing, 1.0 / Math.min(scaledWidth, scaledHeight));

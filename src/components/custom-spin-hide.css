@@ -1,0 +1,9 @@
+/* Hide number input spin buttons for all browsers */
+input[type=number].custom-spin-hide::-webkit-inner-spin-button,
+input[type=number].custom-spin-hide::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type=number].custom-spin-hide {
+  -moz-appearance: textfield;
+}
