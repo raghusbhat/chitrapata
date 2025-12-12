@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useMemo } from "react";
 import { useCanvasStore } from "../store/canvasStore";
 import { ResizeHandle } from "../lib/webgl/types";
 
@@ -154,19 +154,33 @@ export function SelectionControls() {
     resizeSelectedShape,
     endResizing,
     selectionState,
+    getFlattenedShapes,
+    shapes,
   } = useCanvasStore();
 
-  // Subscribe selected shape to react to rotation/resizing updates
-  const shape = useCanvasStore((state) => state.getSelectedShape());
+  // Memoize flattened shapes to prevent infinite loops
+  const flattenedShapes = useMemo(() => {
+    return getFlattenedShapes();
+  }, [shapes, getFlattenedShapes]);
+
+  // Get selected shape directly from flattenedShapes (which has absoluteTransform calculated)
+  const shape = selectedShapeId
+    ? flattenedShapes.find((s) => s.id === selectedShapeId)
+    : null;
 
   const handleMouseDown = useCallback((handle: ResizeHandle, e: React.MouseEvent) => {
     if (!selectedShapeId || !shape) return;
     e.stopPropagation();
+
+    // Shape from flattenedShapes always has absoluteTransform
+    const shapeX = shape.absoluteTransform?.x ?? shape.x;
+    const shapeY = shape.absoluteTransform?.y ?? shape.y;
+
     startResizing(
       selectedShapeId,
       handle,
       { x: e.clientX, y: e.clientY },
-      { x: shape.x, y: shape.y, width: shape.width, height: shape.height }
+      { x: shapeX, y: shapeY, width: shape.width, height: shape.height }
     );
   }, [selectedShapeId, shape, startResizing]);
 
@@ -195,10 +209,15 @@ export function SelectionControls() {
 
   if (!shape || !selectedShapeId) return null;
 
+  // Shape from flattenedShapes always has absoluteTransform calculated
+  const absoluteX = shape.absoluteTransform?.x ?? shape.x;
+  const absoluteY = shape.absoluteTransform?.y ?? shape.y;
+  const absoluteRotation = shape.absoluteTransform?.rotation ?? shape.rotation ?? 0;
+
   // For lines, show only start/end handles (no bounding box)
   if (shape.type === "line") {
-    const start = { x: shape.x, y: shape.y };
-    const end = { x: shape.x + shape.width, y: shape.y + shape.height };
+    const start = { x: absoluteX, y: absoluteY };
+    const end = { x: absoluteX + shape.width, y: absoluteY + shape.height };
     return (
       <>
         <Handle position={start} cursor="pointer" handle="top-left" onMouseDown={handleMouseDown} />
@@ -207,17 +226,17 @@ export function SelectionControls() {
     );
   }
 
-  const { x, y, width, height, rotation = 0 } = shape;
+  const { width, height } = shape;
 
   return (
     <div
       className="absolute"
       style={{
-        left: x,
-        top: y,
+        left: absoluteX,
+        top: absoluteY,
         width,
         height,
-        transform: `rotate(${rotation}deg)`,
+        transform: `rotate(${absoluteRotation}deg)`,
         transformOrigin: "center center",
       }}
     >

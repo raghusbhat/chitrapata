@@ -252,10 +252,8 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   getFlattenedShapes: () => {
     const state = get();
 
-    // Use cached result if available
-    if (!state.cache.needsUpdate && state.cache.flattenedShapes.length > 0) {
-      return state.cache.flattenedShapes;
-    }
+    // Always recalculate - caching was causing infinite render loops
+    // The useMemo in Canvas.tsx will handle memoization
 
     // Find all root shapes (no parent)
     const rootShapes = state.shapes.filter((s) => !s.parentId);
@@ -264,15 +262,48 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     // Process shapes in hierarchy order for correct z-index
     const processShape = (
       shape: Shape,
-      parentTransform?: Shape["absoluteTransform"]
+      parentTransform?: Shape["absoluteTransform"],
+      parentShape?: Shape
     ) => {
-      // Calculate absolute transform based on parent
+      let absoluteX = shape.x;
+      let absoluteY = shape.y;
+      let absoluteRotation = shape.rotation || 0;
+
+      if (parentTransform && parentShape) {
+        // Figma's coordinate system: child's x,y is relative to parent's LOCAL top-left
+        // When parent rotates, we need to transform through parent's rotation matrix
+        const parentRotRad = ((parentTransform.rotation || 0) * Math.PI) / 180;
+
+        if (parentRotRad !== 0) {
+          // Apply rotation matrix to child's local position
+          // Child is at (shape.x, shape.y) in parent's LOCAL space
+          const cos = Math.cos(parentRotRad);
+          const sin = Math.sin(parentRotRad);
+
+          // Rotate the child's local position vector
+          const rotatedLocalX = shape.x * cos - shape.y * sin;
+          const rotatedLocalY = shape.x * sin + shape.y * cos;
+
+          // Add to parent's absolute position
+          absoluteX = (parentTransform.x || 0) + rotatedLocalX;
+          absoluteY = (parentTransform.y || 0) + rotatedLocalY;
+        } else {
+          // No rotation: simple addition
+          absoluteX = (parentTransform.x || 0) + shape.x;
+          absoluteY = (parentTransform.y || 0) + shape.y;
+        }
+
+        // Accumulate rotation
+        absoluteRotation = (parentTransform.rotation || 0) + (shape.rotation || 0);
+      }
+
       const absoluteTransform = {
-        x: (parentTransform?.x || 0) + shape.x,
-        y: (parentTransform?.y || 0) + shape.y,
-        rotation: (parentTransform?.rotation || 0) + (shape.rotation || 0),
+        x: absoluteX,
+        y: absoluteY,
+        rotation: absoluteRotation,
         scale: parentTransform?.scale || 1,
       };
+
 
       // Create a new shape with absolute transform for rendering
       const transformedShape = {
@@ -295,7 +326,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
 
         // Process each child
         for (const childShape of childShapes) {
-          processShape(childShape, absoluteTransform);
+          processShape(childShape, absoluteTransform, transformedShape);
         }
       }
     };
@@ -305,16 +336,11 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
 
     // Process each root shape
     for (const rootShape of rootShapes) {
-      processShape(rootShape);
+      processShape(rootShape, undefined, undefined);
     }
 
-    // Update cache immediately (no setTimeout - prevents memory leaks)
-    set((state) => ({
-      cache: {
-        flattenedShapes: result,
-        needsUpdate: false,
-      },
-    }));
+    // DON'T update cache here - it causes infinite render loop
+    // Cache will be updated by explicit invalidation in shape mutation methods
 
     return result;
   },
@@ -1021,13 +1047,24 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       state.selectionState;
     if (!initialMousePos || !initialShapeBounds) return;
 
+    // Convert screen coordinates to canvas coordinates
+    const canvasCurrentPos = {
+      x: (currentMousePos.x - state.canvasOffset.x) / state.scale,
+      y: (currentMousePos.y - state.canvasOffset.y) / state.scale,
+    };
+
+    const canvasInitialPos = {
+      x: (initialMousePos.x - state.canvasOffset.x) / state.scale,
+      y: (initialMousePos.y - state.canvasOffset.y) / state.scale,
+    };
+
     if (activeHandle === "rotate") {
       const centerX = initialShapeBounds.x + initialShapeBounds.width / 2;
       const centerY = initialShapeBounds.y + initialShapeBounds.height / 2;
       const center = { x: centerX, y: centerY };
 
-      const initialAngle = calculateRotationAngle(center, initialMousePos);
-      const currentAngle = calculateRotationAngle(center, currentMousePos);
+      const initialAngle = calculateRotationAngle(center, canvasInitialPos);
+      const currentAngle = calculateRotationAngle(center, canvasCurrentPos);
 
       let deltaAngle = currentAngle - initialAngle;
 
@@ -1067,15 +1104,15 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       let newWidth = initialShapeBounds.width;
       let newHeight = initialShapeBounds.height;
       if (activeHandle === "top-left") {
-        newX = initialShapeBounds.x + currentMousePos.x - initialMousePos.x;
-        newY = initialShapeBounds.y + currentMousePos.y - initialMousePos.y;
+        newX = initialShapeBounds.x + canvasCurrentPos.x - canvasInitialPos.x;
+        newY = initialShapeBounds.y + canvasCurrentPos.y - canvasInitialPos.y;
         newWidth = endX - newX;
         newHeight = endY - newY;
       } else if (activeHandle === "bottom-right") {
         newWidth =
-          initialShapeBounds.width + currentMousePos.x - initialMousePos.x;
+          initialShapeBounds.width + canvasCurrentPos.x - canvasInitialPos.x;
         newHeight =
-          initialShapeBounds.height + currentMousePos.y - initialMousePos.y;
+          initialShapeBounds.height + canvasCurrentPos.y - canvasInitialPos.y;
       }
       set((state) => ({
         shapes: state.shapes.map((s) =>
@@ -1089,8 +1126,8 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     }
 
     // Handle resizing
-    const deltaX = currentMousePos.x - initialMousePos.x;
-    const deltaY = currentMousePos.y - initialMousePos.y;
+    const deltaX = canvasCurrentPos.x - canvasInitialPos.x;
+    const deltaY = canvasCurrentPos.y - canvasInitialPos.y;
     let newX = initialShapeBounds.x;
     let newY = initialShapeBounds.y;
     let newWidth = initialShapeBounds.width;
@@ -1205,6 +1242,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     const state = get();
     if (!state.selectedShapeId) return null;
 
+    // Return from raw shapes array - absoluteTransform will be added by caller if needed
     return state.shapes.find((s) => s.id === state.selectedShapeId) || null;
   },
 

@@ -4,7 +4,14 @@
       "Read(//mnt/c/RAGHU/softwares/ShareX-17.1.0-portable/ShareX/Screenshots/2025-09/**)",
       "WebSearch",
       "WebFetch(domain:help.figma.com)",
-      "Bash(npm run dev:*)"
+      "Bash(npm run dev:*)",
+      "Bash(npm install)",
+      "WebFetch(domain:www.figma.com)",
+      "WebFetch(domain:developers.figma.com)",
+      "Bash(npm ls:*)",
+      "Bash(rm:*)",
+      "Bash(curl:*)",
+      "Bash(npm cache clean:*)"
     ],
     "deny": [],
     "ask": []

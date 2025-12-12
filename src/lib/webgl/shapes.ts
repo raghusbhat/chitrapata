@@ -56,7 +56,6 @@ function createRectangleVertices(
     1.0, // Bottom-right
   ]);
 
-  console.log("Created rectangle vertices:", vertices);
   return vertices;
 }
 
@@ -104,7 +103,6 @@ function createEllipseVertices(
     vertices[index + 3] = texCoordV;
   }
 
-  console.log("Created ellipse vertices:", vertices);
   return vertices;
 }
 
@@ -129,7 +127,6 @@ function createLineVertices(
     0.5, // End point
   ]);
 
-  console.log("Created line vertices:", vertices);
   return vertices;
 }
 
@@ -144,7 +141,6 @@ function hexToRGBA(hex: string): [number, number, number, number] {
 
   // Make sure the hex starts with #
   if (!hex.startsWith("#")) {
-    console.log("Non-hex color format received:", hex);
     // Try to handle common color names or formats
     if (hex.toLowerCase() === "white") return [1, 1, 1, 1];
     if (hex.toLowerCase() === "black") return [0, 0, 0, 1];
@@ -185,7 +181,6 @@ function hexToRGBA(hex: string): [number, number, number, number] {
       const g = parseInt(hex.slice(3, 5), 16) / 255;
       const b = parseInt(hex.slice(5, 7), 16) / 255;
       const a = hex.length === 9 ? parseInt(hex.slice(7, 9), 16) / 255 : 1;
-      console.log(`Parsed color ${hex} to RGBA:`, [r, g, b, a]);
       return [r, g, b, a];
     }
     // Shorthand hex like #FFF
@@ -194,7 +189,6 @@ function hexToRGBA(hex: string): [number, number, number, number] {
       const g = parseInt(hex[2] + hex[2], 16) / 255;
       const b = parseInt(hex[3] + hex[3], 16) / 255;
       const a = hex.length === 5 ? parseInt(hex[4] + hex[4], 16) / 255 : 1;
-      console.log(`Parsed shorthand color ${hex} to RGBA:`, [r, g, b, a]);
       return [r, g, b, a];
     }
     // Invalid format
@@ -215,28 +209,21 @@ export function renderShape(
   context: WebGLContext
 ) {
   const { program, attributes, uniforms } = context;
+
+  // Use absoluteTransform if available (for shapes with parents)
+  const x = shape.absoluteTransform?.x ?? shape.x;
+  const y = shape.absoluteTransform?.y ?? shape.y;
+  const rotation = shape.absoluteTransform?.rotation ?? shape.rotation ?? 0;
+
   const {
-    x,
-    y,
     width,
     height,
     fill = "#FFFFFF",
     stroke = "#000000",
     strokeWidth = 1,
-    rotation = 0,
     type = "rectangle",
     scaleStrokeWidth = false,
   } = shape;
-
-  // Log shape rendering details
-  console.log(`[WebGL] Rendering shape: ${type} (id: ${shape.id})`, {
-    fill,
-    stroke,
-    width,
-    height,
-    rotation,
-    isVisible: shape.isVisible,
-  });
 
   // Get device pixel ratio
   const dpr = window.devicePixelRatio || 1;
@@ -279,19 +266,6 @@ export function renderShape(
   // Convert colors using the safer hexToRGBA function
   const fillRGBA = hexToRGBA(fill);
   const strokeRGBA = hexToRGBA(stroke);
-
-  console.log(
-    `[WebGL] Fill color for shape id ${shape.id}:`,
-    fill,
-    "->",
-    fillRGBA
-  );
-  console.log(
-    `[WebGL] Stroke color for shape id ${shape.id}:`,
-    stroke,
-    "->",
-    strokeRGBA
-  );
 
   gl.uniform4f(
     uniforms.fillColor,

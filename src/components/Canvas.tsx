@@ -6,6 +6,7 @@ import { renderShape as renderShapeWebGL } from "../lib/webgl/shapes";
 import { createWebGLContext } from "../lib/webgl/context";
 import { v4 as uuidv4 } from "uuid";
 import { SelectionControls } from "./SelectionControls";
+import { calculateAbsoluteTransform } from "../lib/utils/transformUtils";
 import { mat4 } from "gl-matrix";
 
 interface CanvasProps {
@@ -87,13 +88,53 @@ export function Canvas({ width, height }: CanvasProps) {
     canvas2d.style.width = `${width}px`;
     canvas2d.style.height = `${height}px`;
 
-    // Temporarily disable WebGL due to shader compilation issues
-    // TODO: Fix WebGL shaders
-    glContextRef.current = null;
-    console.log("WebGL temporarily disabled, using Canvas2D only");
+    // Initialize WebGL context for rendering shapes (ONLY if not already initialized)
+    if (!glContextRef.current) {
+      try {
+        const glContext = createWebGLContext(webglCanvas);
+        if (glContext) {
+          glContextRef.current = glContext;
+          console.log("✅ [Canvas] WebGL context created and stored");
+        } else {
+          glContextRef.current = null;
+          console.warn("⚠️ [Canvas] WebGL context creation returned null");
+        }
+      } catch (error) {
+        console.error("❌ [Canvas] WebGL initialization failed:", error);
+        glContextRef.current = null;
+      }
+    } else {
+      console.log("♻️ [Canvas] Reusing existing WebGL context");
+    }
 
-    // Cleanup WebGL resources on unmount
+    // Handle WebGL context loss/restore events
+    const handleContextLost = (event: Event) => {
+      event.preventDefault();
+      console.warn("⚠️ [Canvas] WebGL context lost - will attempt to restore");
+    };
+
+    const handleContextRestored = () => {
+      console.log("🔄 [Canvas] WebGL context restored - reinitializing");
+      try {
+        const glContext = createWebGLContext(webglCanvas);
+        if (glContext) {
+          glContextRef.current = glContext;
+          console.log("✅ [Canvas] WebGL context re-created after restore");
+        }
+      } catch (error) {
+        console.error("❌ [Canvas] Failed to restore WebGL context:", error);
+        glContextRef.current = null;
+      }
+    };
+
+    webglCanvas.addEventListener('webglcontextlost', handleContextLost);
+    webglCanvas.addEventListener('webglcontextrestored', handleContextRestored);
+
+    // Cleanup WebGL resources and event listeners on unmount
     return () => {
+      webglCanvas.removeEventListener('webglcontextlost', handleContextLost);
+      webglCanvas.removeEventListener('webglcontextrestored', handleContextRestored);
+
       if (glContextRef.current) {
         const { gl, program } = glContextRef.current;
         // Delete the program and lose context
@@ -137,12 +178,6 @@ export function Canvas({ width, height }: CanvasProps) {
 
   // Hybrid rendering: WebGL for shapes, Canvas2D for selection
   useEffect(() => {
-    console.log("=== RENDER EFFECT TRIGGERED ===", {
-      currentShape,
-      isDrawing,
-      shapesCount: shapes.length
-    });
-
     const webglCanvas = webglCanvasRef.current;
     const canvas2d = canvas2dRef.current;
     const glContext = glContextRef.current;
@@ -170,8 +205,8 @@ export function Canvas({ width, height }: CanvasProps) {
 
       gl.uniformMatrix4fv(uniforms.cameraMatrix, false, cameraMatrix);
 
-      // Render shapes with WebGL
-      shapes.forEach((shape) => {
+      // Render shapes with WebGL (use flattenedShapes for correct absolute positions)
+      flattenedShapes.forEach((shape) => {
         if (canUseWebGL(shape)) {
           try {
             renderShapeWebGL(gl, shape, { ...glContext, currentScale: scale });
@@ -183,10 +218,14 @@ export function Canvas({ width, height }: CanvasProps) {
 
       // Draw preview of shape being created with WebGL
       if (currentShape && isDrawing && canUseWebGL(currentShape)) {
-        console.log("Rendering WebGL preview:", currentShape);
         try {
-          // Render with slight transparency for preview
-          renderShapeWebGL(gl, currentShape, { ...glContext, currentScale: scale });
+          // If shape has a parent, calculate absoluteTransform for rendering
+          const parentFrame = currentShape.parentId
+            ? flattenedShapes.find(s => s.id === currentShape.parentId)
+            : undefined;
+          const shapeToRender = calculateAbsoluteTransform(currentShape, parentFrame);
+
+          renderShapeWebGL(gl, shapeToRender, { ...glContext, currentScale: scale });
         } catch (e) {
           console.error("WebGL preview render failed:", e);
         }
@@ -227,8 +266,8 @@ export function Canvas({ width, height }: CanvasProps) {
 
     // Render shapes that can't use WebGL (fallback)
     if (!glContext) {
-      // No WebGL - render all shapes with Canvas2D
-      shapes.forEach((shape) => {
+      // No WebGL - render all shapes with Canvas2D (use flattenedShapes for correct transforms)
+      flattenedShapes.forEach((shape) => {
         try {
           renderShape(ctx, shape, ctx.getTransform());
         } catch (e) {
@@ -237,7 +276,7 @@ export function Canvas({ width, height }: CanvasProps) {
       });
     } else {
       // WebGL available - only render shapes that WebGL can't handle
-      shapes.forEach((shape) => {
+      flattenedShapes.forEach((shape) => {
         if (!canUseWebGL(shape)) {
           try {
             renderShape(ctx, shape, ctx.getTransform());
@@ -249,62 +288,28 @@ export function Canvas({ width, height }: CanvasProps) {
     }
 
     // Draw the shape being created (preview while dragging)
-    console.log("Preview check:", {
-      hasCurrentShape: !!currentShape,
-      isDrawing,
-      canUseWebGL: currentShape ? canUseWebGL(currentShape) : null,
-      shouldRender: !!(currentShape && isDrawing)
-    });
-
-    if (currentShape && isDrawing) {
-      console.log("Rendering Canvas2D preview:", currentShape);
+    // Only render with Canvas2D if WebGL can't handle it
+    if (currentShape && isDrawing && (!glContext || !canUseWebGL(currentShape))) {
       try {
         ctx.save();
         // Draw with semi-transparent style to show it's a preview
         ctx.globalAlpha = 0.7;
-        renderShape(ctx, currentShape, ctx.getTransform());
+
+        // If shape has a parent, calculate absoluteTransform for rendering
+        const parentFrame = currentShape.parentId
+          ? flattenedShapes.find(s => s.id === currentShape.parentId)
+          : undefined;
+        const shapeToRender = calculateAbsoluteTransform(currentShape, parentFrame);
+
+        renderShape(ctx, shapeToRender, ctx.getTransform());
         ctx.restore();
       } catch (e) {
         console.error("Error drawing shape preview:", e);
       }
     }
 
-    // Draw selection rectangle if one shape is selected
-    if (selectedShapeIds && selectedShapeIds.length === 1) {
-      const selectedShape = shapes.find((s) => s.id === selectedShapeIds[0]);
-      if (selectedShape) {
-        try {
-          ctx.save();
-          // Translate to center of shape
-          ctx.translate(
-            selectedShape.x + selectedShape.width / 2,
-            selectedShape.y + selectedShape.height / 2
-          );
-          if (selectedShape.rotation) {
-            ctx.rotate((selectedShape.rotation * Math.PI) / 180);
-          }
-
-          // Draw Figma-style selection outline (tight to shape, bright blue)
-          ctx.strokeStyle = "#1E90FF"; // Figma blue
-          ctx.lineWidth = 1.5 / scale; // Slightly thicker for visibility
-          ctx.strokeRect(
-            -selectedShape.width / 2,
-            -selectedShape.height / 2,
-            selectedShape.width,
-            selectedShape.height
-          );
-
-          // Draw selection handles if we're not resizing
-          if (!localIsResizing) {
-            drawSelectionHandles(ctx, selectedShape, scale);
-          }
-
-          ctx.restore();
-        } catch (e) {
-          console.error("Error drawing selection:", e);
-        }
-      }
-    }
+    // Selection rendering is now handled by SelectionControls component
+    // (removed duplicate Canvas2D selection rendering)
   }, [shapes, selectedShapeIds, canvasOffset, scale, theme, localIsResizing, width, height, currentShape, isDrawing]);
 
   // Find a shape at the given position, considering hierarchy
@@ -466,7 +471,6 @@ export function Canvas({ width, height }: CanvasProps) {
       setDrawStart({ x: canvasX, y: canvasY });
       setIsDrawing(true);
       setIsSelecting(false);
-      console.log("Started drawing at canvas coords:", { canvasX, canvasY });
 
       // Find if cursor is inside a frame
       let parentId: string | undefined = undefined;
@@ -492,19 +496,40 @@ export function Canvas({ width, height }: CanvasProps) {
       // Create new shape with default properties
       const defaults = getDefaultPropertiesForShape(currentDrawingTool);
 
+      // Convert to frame-relative coordinates if inside a frame
+      let shapeX = canvasX;
+      let shapeY = canvasY;
+
+      if (parentId) {
+        const parentFrame = framesAtPosition.find(f => f.id === parentId);
+        if (parentFrame) {
+          const frameX = parentFrame.absoluteTransform?.x ?? parentFrame.x;
+          const frameY = parentFrame.absoluteTransform?.y ?? parentFrame.y;
+          const frameRotation = parentFrame.absoluteTransform?.rotation ?? parentFrame.rotation ?? 0;
+
+          // Translate to frame's origin
+          const translatedX = canvasX - frameX;
+          const translatedY = canvasY - frameY;
+
+          // If frame is rotated, apply inverse rotation to get local coordinates
+          if (frameRotation !== 0) {
+            const rotRad = (-frameRotation * Math.PI) / 180; // Negative for inverse
+            const cos = Math.cos(rotRad);
+            const sin = Math.sin(rotRad);
+            shapeX = translatedX * cos - translatedY * sin;
+            shapeY = translatedX * sin + translatedY * cos;
+          } else {
+            shapeX = translatedX;
+            shapeY = translatedY;
+          }
+        }
+      }
+
       const newShape: Shape = {
         id: uuidv4(),
         type: currentDrawingTool,
-        x: parentId
-          ? canvasX -
-            (framesAtPosition.find((frame) => frame.id === parentId)
-              ?.absoluteTransform?.x ?? 0)
-          : canvasX,
-        y: parentId
-          ? canvasY -
-            (framesAtPosition.find((frame) => frame.id === parentId)
-              ?.absoluteTransform?.y ?? 0)
-          : canvasY,
+        x: shapeX,
+        y: shapeY,
         width: 1, // Start with minimal size
         height: 1, // Start with minimal size
         fill: defaults.fill || "#FFFFFF",
@@ -520,7 +545,6 @@ export function Canvas({ width, height }: CanvasProps) {
         parentId: parentId,
       };
 
-      console.log("Created initial shape:", newShape);
       setCurrentShape(newShape);
       return;
     }
@@ -589,13 +613,23 @@ export function Canvas({ width, height }: CanvasProps) {
           width: dx,
           height: dy,
         };
-        console.log("Drawing line preview:", updatedShape);
         setCurrentShape(updatedShape);
       } else {
-        const newWidth = Math.abs(canvasX - drawStart.x);
-        const newHeight = Math.abs(canvasY - drawStart.y);
-        const newX = Math.min(canvasX, drawStart.x);
-        const newY = Math.min(canvasY, drawStart.y);
+        let newWidth = Math.abs(canvasX - drawStart.x);
+        let newHeight = Math.abs(canvasY - drawStart.y);
+        let newX = Math.min(canvasX, drawStart.x);
+        let newY = Math.min(canvasY, drawStart.y);
+
+        // Convert to frame-relative if shape has a parent
+        if (currentShape.parentId) {
+          const parentFrame = flattenedShapes.find(s => s.id === currentShape.parentId);
+          if (parentFrame) {
+            const frameX = parentFrame.absoluteTransform?.x ?? parentFrame.x;
+            const frameY = parentFrame.absoluteTransform?.y ?? parentFrame.y;
+            newX = newX - frameX;
+            newY = newY - frameY;
+          }
+        }
 
         const updatedShape = {
           ...currentShape,
@@ -604,7 +638,6 @@ export function Canvas({ width, height }: CanvasProps) {
           width: newWidth,
           height: newHeight,
         };
-        console.log("Drawing shape preview:", updatedShape);
         setCurrentShape(updatedShape);
       }
     }
@@ -616,17 +649,49 @@ export function Canvas({ width, height }: CanvasProps) {
       if (shape && shape.isLocked) return;
 
       if (shape) {
-        const deltaX = x - moveStart.x;
-        const deltaY = y - moveStart.y;
+        let deltaX = canvasX - moveStart.x;
+        let deltaY = canvasY - moveStart.y;
+
+        // If shape has a parent, transform delta to parent's local space
+        if (shape.parentId) {
+          const parent = shapes.find((s) => s.id === shape.parentId);
+          if (parent && parent.rotation) {
+            // Inverse rotate the delta to get local-space movement
+            const rotRad = (-parent.rotation * Math.PI) / 180;
+            const cos = Math.cos(rotRad);
+            const sin = Math.sin(rotRad);
+            const localDX = deltaX * cos - deltaY * sin;
+            const localDY = deltaX * sin + deltaY * cos;
+            deltaX = localDX;
+            deltaY = localDY;
+          }
+        }
 
         // Handle multi-select movement
         if (selectedShapeIds.length > 1) {
           selectedShapeIds.forEach((id) => {
             const s = shapes.find((shape) => shape.id === id);
             if (s && !s.isLocked) {
+              // Each shape might have different parent, recalculate delta
+              let shapeDeltaX = canvasX - moveStart.x;
+              let shapeDeltaY = canvasY - moveStart.y;
+
+              if (s.parentId) {
+                const parent = shapes.find((p) => p.id === s.parentId);
+                if (parent && parent.rotation) {
+                  const rotRad = (-parent.rotation * Math.PI) / 180;
+                  const cos = Math.cos(rotRad);
+                  const sin = Math.sin(rotRad);
+                  const localDX = shapeDeltaX * cos - shapeDeltaY * sin;
+                  const localDY = shapeDeltaX * sin + shapeDeltaY * cos;
+                  shapeDeltaX = localDX;
+                  shapeDeltaY = localDY;
+                }
+              }
+
               updateShape(id, {
-                x: s.x + deltaX,
-                y: s.y + deltaY,
+                x: s.x + shapeDeltaX,
+                y: s.y + shapeDeltaY,
               });
             }
           });
@@ -638,7 +703,7 @@ export function Canvas({ width, height }: CanvasProps) {
           });
         }
 
-        setMoveStart({ x, y });
+        setMoveStart({ x: canvasX, y: canvasY });
         invalidateCache(); // Ensure hierarchical cache is updated
       }
     }
@@ -698,7 +763,8 @@ export function Canvas({ width, height }: CanvasProps) {
 
     // If we just finished moving a shape, check if it should enter/exit a frame (Figma behavior)
     if (isMoving && selectedShapeId) {
-      const movedShape = shapes.find((s) => s.id === selectedShapeId);
+      // Use flattenedShapes to get absoluteTransform
+      const movedShape = flattenedShapes.find((s) => s.id === selectedShapeId);
       if (movedShape && movedShape.type !== "frame" && movedShape.type !== "group") {
         // Get absolute position for frame detection
         const absoluteX = movedShape.absoluteTransform?.x ?? movedShape.x;
@@ -717,16 +783,40 @@ export function Canvas({ width, height }: CanvasProps) {
         if (newContainingFrameId !== movedShape.parentId) {
           if (newContainingFrameId) {
             // Moving INTO a frame
-            const frame = shapes.find((s) => s.id === newContainingFrameId);
+            // CRITICAL: Use flattenedShapes to get absoluteTransform
+            const frame = flattenedShapes.find((s) => s.id === newContainingFrameId);
             if (frame) {
               // Convert absolute coordinates to be relative to frame
               const frameX = frame.absoluteTransform?.x ?? frame.x;
               const frameY = frame.absoluteTransform?.y ?? frame.y;
+              const frameRotation = frame.absoluteTransform?.rotation ?? frame.rotation ?? 0;
+
+              let relX = absoluteX - frameX;
+              let relY = absoluteY - frameY;
+
+              // If frame is rotated, inverse-rotate into frame's local space
+              if (frameRotation !== 0) {
+                const rotRad = (-frameRotation * Math.PI) / 180;
+                const cos = Math.cos(rotRad);
+                const sin = Math.sin(rotRad);
+
+                // Translate to frame center
+                relX = relX - frame.width / 2;
+                relY = relY - frame.height / 2;
+
+                // Rotate
+                const localX = relX * cos - relY * sin;
+                const localY = relX * sin + relY * cos;
+
+                // Translate back from center
+                relX = localX + frame.width / 2;
+                relY = localY + frame.height / 2;
+              }
 
               updateShape(selectedShapeId, {
                 parentId: newContainingFrameId,
-                x: absoluteX - frameX,
-                y: absoluteY - frameY,
+                x: relX,
+                y: relY,
               });
             }
           } else if (movedShape.parentId) {
@@ -758,7 +848,7 @@ export function Canvas({ width, height }: CanvasProps) {
 
         // Create final shape with a higher zIndex to be on top
         // Preserve the fill color exactly as set in the currentShape
-        const finalShape = {
+        let finalShape = {
           ...currentShape,
           zIndex: highestZIndex + 1,
           name:
@@ -768,6 +858,8 @@ export function Canvas({ width, height }: CanvasProps) {
               currentShape.type.slice(1)
             } ${shapes.length + 1}`,
         };
+
+        // No coordinate conversion needed - shapes are already stored in frame-relative coordinates
 
         // Batch these operations together to prevent setState during render
         const newShapeId = addShape(finalShape);
